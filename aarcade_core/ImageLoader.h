@@ -4,48 +4,61 @@
 #include <string>
 #include <functional>
 #include <windows.h>
-#include <fstream>
-#include <vector>
-#include <algorithm>
-#include <thread>
 #include <queue>
 #include <mutex>
-#include <condition_variable>
-#include <atomic>
 #include <memory>
-#include "IImageDownloader.h"
+#include <algorithm>
+#include <Ultralight/Ultralight.h>
+#include <AppCore/AppCore.h>
+
+using namespace ultralight;
+
+// Forward declaration
+class JSBridge;
 
 // Result structure for image loading
 struct ImageLoadResult {
     bool success;
     std::string filePath;
-    std::string downloaderName;
+    std::string url;
 };
 
-class ImageLoader {
+/**
+ * ImageLoader - Ultralight view-based image renderer
+ *
+ * This class manages a dedicated 512x512 Ultralight view for rendering images to cache.
+ * It loads image-loader.html and communicates via JS bridge to load images on-demand.
+ *
+ * Architecture:
+ * - Single offscreen View (512x512)
+ * - Loads images through HTML/JS (no direct HTTP)
+ * - Renders and saves to cache when JS notifies image is loaded
+ * - Uses Kodi-style CRC32 hashing for cache paths
+ * - No threading (Ultralight handles async)
+ */
+class ImageLoader : public LoadListener {
 private:
-    std::string cacheBasePath_;
-    std::unique_ptr<IImageDownloader> downloader_;
+    RefPtr<Renderer> renderer_;
+    RefPtr<View> view_;
+    JSBridge* jsBridge_;  // Weak pointer, owned by MainApp
 
-    // Queue for download jobs
-    struct DownloadJob {
+    std::string cacheBasePath_;
+    bool isInitialized_;
+    bool isImageReady_;
+
+    std::string currentUrl_;
+    std::function<void(const ImageLoadResult&)> currentCallback_;
+
+    // Queue for pending load requests
+    struct LoadJob {
         std::string url;
         std::function<void(const ImageLoadResult&)> callback;
     };
 
-    // Completion result
-    struct CompletionResult {
-        ImageLoadResult result;
-        std::function<void(const ImageLoadResult&)> callback;
-    };
-
-    std::queue<DownloadJob> jobQueue_;
-    std::queue<CompletionResult> completionQueue_;
+    std::queue<LoadJob> jobQueue_;
+    std::queue<ImageLoadResult> completionQueue_;
     std::mutex queueMutex_;
     std::mutex completionMutex_;
-    std::condition_variable queueCV_;
-    std::atomic<bool> workerRunning_;
-    std::thread workerThread_;
 
     void debugOutput(const std::string& message) {
         std::string debugMsg = "[ImageLoader] " + message;
@@ -131,7 +144,7 @@ private:
     }
 
     // Get cache file path using Kodi-style directory structure
-    std::string getCacheFilePath(const std::string& url, const std::string& extension) {
+    std::string getCacheFilePath(const std::string& url) {
         std::string normalized = normalizeUrl(url);
         std::string hash = calculateKodiHash(normalized);
 
@@ -142,141 +155,167 @@ private:
         // Ensure directory exists
         CreateDirectoryA(cachePath.c_str(), NULL);
 
-        return cachePath + "\\" + hash + extension;
+        // ImageLoader always saves as PNG
+        return cachePath + "\\" + hash + ".png";
     }
 
-    // Check if cached file exists (check multiple extensions)
+    // Check if cached file exists
     std::string getCachedFilePath(const std::string& url) {
-        std::string normalized = normalizeUrl(url);
-        std::string hash = calculateKodiHash(normalized);
-        std::string subfolder = hash.substr(0, 1);
-        std::string cachePath = cacheBasePath_ + "\\" + subfolder;
+        std::string filePath = getCacheFilePath(url);
 
-        // Check common image extensions
-        std::vector<std::string> extensions = { ".jpg", ".png", ".gif", ".webp", ".bmp" };
-
-        for (const auto& ext : extensions) {
-            std::string filePath = cachePath + "\\" + hash + ext;
-            WIN32_FILE_ATTRIBUTE_DATA fileInfo;
-            if (GetFileAttributesExA(filePath.c_str(), GetFileExInfoStandard, &fileInfo) != 0) {
-                return filePath;
-            }
+        WIN32_FILE_ATTRIBUTE_DATA fileInfo;
+        if (GetFileAttributesExA(filePath.c_str(), GetFileExInfoStandard, &fileInfo) != 0) {
+            return filePath;
         }
 
         return "";
     }
 
-    // Worker thread that processes download jobs
-    void workerThreadFunc() {
-        debugOutput("Worker thread started");
+    // Process the next job in queue
+    void processNextJob() {
+        LoadJob job;
 
-        while (workerRunning_) {
-            DownloadJob job;
-
-            {
-                std::unique_lock<std::mutex> lock(queueMutex_);
-
-                // Wait for a job or shutdown signal
-                queueCV_.wait(lock, [this] {
-                    return !jobQueue_.empty() || !workerRunning_;
-                });
-
-                if (!workerRunning_ && jobQueue_.empty()) {
-                    break;
-                }
-
-                if (!jobQueue_.empty()) {
-                    job = jobQueue_.front();
-                    jobQueue_.pop();
-                }
-                else {
-                    continue;
-                }
+        {
+            std::lock_guard<std::mutex> lock(queueMutex_);
+            if (jobQueue_.empty()) {
+                debugOutput("No more jobs in queue");
+                return;
             }
 
-            // Process the job outside the lock
-            processDownload(job.url, job.callback);
+            job = jobQueue_.front();
+            jobQueue_.pop();
         }
 
-        debugOutput("Worker thread stopped");
-    }
+        debugOutput("Processing job for URL: " + job.url);
 
-    // Actually perform the download
-    void processDownload(const std::string& url, std::function<void(const ImageLoadResult&)> callback) {
-        // Check if already cached
-        std::string cachedPath = getCachedFilePath(url);
+        // Check cache first
+        std::string cachedPath = getCachedFilePath(job.url);
         if (!cachedPath.empty()) {
             debugOutput("Image already cached: " + cachedPath);
-            // Queue completion instead of calling callback directly
-            {
-                std::lock_guard<std::mutex> lock(completionMutex_);
-                std::string downloaderName = downloader_ ? downloader_->getName() : "cache";
-                completionQueue_.push({ { true, cachedPath, downloaderName }, callback });
-            }
+            std::lock_guard<std::mutex> lock(completionMutex_);
+            completionQueue_.push({ true, cachedPath, job.url });
+
+            // Process next job
+            processNextJob();
             return;
         }
 
-        debugOutput("Downloading image: " + url);
+        // Not cached, need to load and render
+        currentUrl_ = job.url;
+        currentCallback_ = job.callback;
+        isImageReady_ = false;
 
-        // Determine output path - use .png for now, downloaders will handle format
-        // Note: CurlImageDownloader detects format and saves with correct extension
-        // UltralightImageDownloader always saves as PNG
-        std::string cacheFile = getCacheFilePath(url, ".png");
+        // Call JS to load the image
+        loadImageInView(job.url);
+    }
 
-        // Use the downloader to fetch and save the image
-        // The callback from downloader will be queued for main thread processing
-        auto completionCallback = [this, callback](bool success, const std::string& filePath) {
+    // Call JavaScript to load image in the view
+    void loadImageInView(const std::string& url) {
+        if (!view_ || !isInitialized_) {
+            debugOutput("ERROR: View not initialized!");
             std::lock_guard<std::mutex> lock(completionMutex_);
-            std::string downloaderName = downloader_ ? downloader_->getName() : "unknown";
-            completionQueue_.push({ { success, filePath, downloaderName }, callback });
-        };
+            completionQueue_.push({ false, "", url });
+            processNextJob();
+            return;
+        }
 
-        if (downloader_) {
-            downloader_->downloadImage(url, cacheFile, completionCallback);
+        debugOutput("Calling JS to load image: " + url);
+
+        // Acquire JS context
+        auto scoped_context = view_->LockJSContext();
+        JSContextRef ctx = (*scoped_context);
+        JSObjectRef globalObj = JSContextGetGlobalObject(ctx);
+
+        // Get the loadImageUrl function
+        JSStringRef funcName = JSStringCreateWithUTF8CString("loadImageUrl");
+        JSValueRef loadImageFunc = JSObjectGetProperty(ctx, globalObj, funcName, nullptr);
+        JSStringRelease(funcName);
+
+        if (JSValueIsObject(ctx, loadImageFunc)) {
+            // Create URL argument
+            JSStringRef urlStr = JSStringCreateWithUTF8CString(url.c_str());
+            JSValueRef urlArg = JSValueMakeString(ctx, urlStr);
+            JSStringRelease(urlStr);
+
+            // Call the function
+            JSValueRef args[] = { urlArg };
+            JSObjectCallAsFunction(ctx, (JSObjectRef)loadImageFunc, nullptr, 1, args, nullptr);
+
+            debugOutput("JS function called successfully");
         } else {
-            debugOutput("No downloader available");
+            debugOutput("ERROR: loadImageUrl function not found!");
             std::lock_guard<std::mutex> lock(completionMutex_);
-            completionQueue_.push({ { false, "", "none" }, callback });
+            completionQueue_.push({ false, "", url });
+            processNextJob();
         }
     }
 
+    // Render and save the current image
+    void renderAndSave() {
+        debugOutput("Rendering image...");
+
+        // Render the view
+        renderer_->RefreshDisplay(0);
+        renderer_->Render();
+
+        // Get the rendered bitmap
+        BitmapSurface* bitmap_surface = (BitmapSurface*)view_->surface();
+        RefPtr<Bitmap> bitmap = bitmap_surface->bitmap();
+
+        // Get output path
+        std::string outputPath = getCacheFilePath(currentUrl_);
+
+        // Save to file
+        bitmap->WritePNG(outputPath.c_str());
+
+        debugOutput("Image rendered and saved: " + outputPath);
+
+        // Queue completion
+        {
+            std::lock_guard<std::mutex> lock(completionMutex_);
+            completionQueue_.push({ true, outputPath, currentUrl_ });
+        }
+
+        // Process next job
+        processNextJob();
+    }
+
 public:
-    ImageLoader(std::unique_ptr<IImageDownloader> downloader)
-        : downloader_(std::move(downloader)), workerRunning_(true) {
-        // Set default cache path to relative directory
+    ImageLoader(RefPtr<Renderer> renderer, JSBridge* jsBridge)
+        : renderer_(renderer), jsBridge_(jsBridge), isInitialized_(false), isImageReady_(false) {
+
+        debugOutput("Initializing ImageLoader...");
+
+        // Set default cache path
         cacheBasePath_ = ".\\cache\\urls";
 
         // Ensure cache directory exists
         CreateDirectoryA(".\\cache", NULL);
         CreateDirectoryA(cacheBasePath_.c_str(), NULL);
 
+        // Create 512x512 offscreen view
+        ViewConfig view_config;
+        view_config.initial_device_scale = 1.0;
+        view_config.is_accelerated = false;
+
+        view_ = renderer_->CreateView(512, 512, view_config, nullptr);
+        view_->set_load_listener(this);
+
         // Get current working directory for debug output
         char currentDir[MAX_PATH];
         GetCurrentDirectoryA(MAX_PATH, currentDir);
-        std::string fullPath = std::string(currentDir) + "\\" + cacheBasePath_;
+        std::string resourcePath = std::string(currentDir) + "\\resources\\image-loader.html";
 
-        debugOutput("ImageLoader initialized. Cache path: " + fullPath);
+        debugOutput("Loading HTML from: " + resourcePath);
 
-        // Start worker thread
-        workerThread_ = std::thread(&ImageLoader::workerThreadFunc, this);
+        // Load the image-loader.html file
+        String file_url = String("file:///") + String(resourcePath.c_str());
+        view_->LoadURL(file_url);
     }
 
     virtual ~ImageLoader() {
-        // Stop worker thread
-        {
-            std::lock_guard<std::mutex> lock(queueMutex_);
-            workerRunning_ = false;
-        }
-        queueCV_.notify_all();
-
-        if (workerThread_.joinable()) {
-            workerThread_.join();
-        }
-
-        // Cancel all downloads in the downloader
-        if (downloader_) {
-            downloader_->cancelAll();
-        }
+        view_ = nullptr;
+        debugOutput("ImageLoader destroyed");
     }
 
     // Set custom cache directory
@@ -287,27 +326,86 @@ public:
     }
 
     // Load and cache an image URL
-    void loadImage(const std::string& url, std::function<void(const ImageLoadResult&)> callback) {
-        // Add job to queue
+    void loadAndCacheImage(const std::string& url, std::function<void(const ImageLoadResult&)> callback) {
+        debugOutput("Request to load image: " + url);
+
         {
             std::lock_guard<std::mutex> lock(queueMutex_);
             jobQueue_.push({ url, callback });
+
+            // If this is the first job and we're initialized, start processing
+            if (jobQueue_.size() == 1 && isInitialized_) {
+                processNextJob();
+            }
         }
-        queueCV_.notify_one();
     }
 
-    // Process completed downloads - MUST be called from main thread
+    // Called from JS bridge when image is loaded and ready
+    void onImageLoaded(bool success, const std::string& url) {
+        debugOutput("onImageLoaded called: " + url + " (success: " + (success ? "true" : "false") + ")");
+
+        if (url != currentUrl_) {
+            debugOutput("WARNING: URL mismatch! Expected: " + currentUrl_ + ", Got: " + url);
+        }
+
+        if (success) {
+            isImageReady_ = true;
+            renderAndSave();
+        } else {
+            debugOutput("Image load failed");
+            std::lock_guard<std::mutex> lock(completionMutex_);
+            completionQueue_.push({ false, "", url });
+            processNextJob();
+        }
+    }
+
+    // Called from JS bridge when image loader HTML is ready
+    void onImageLoaderReady() {
+        debugOutput("Image loader HTML ready");
+        isInitialized_ = true;
+
+        // Start processing queued jobs if any
+        std::lock_guard<std::mutex> lock(queueMutex_);
+        if (!jobQueue_.empty()) {
+            processNextJob();
+        }
+    }
+
+    // Process completed renders - MUST be called from main thread
     void processCompletions() {
         std::lock_guard<std::mutex> lock(completionMutex_);
 
         while (!completionQueue_.empty()) {
-            CompletionResult completion = completionQueue_.front();
+            ImageLoadResult result = completionQueue_.front();
             completionQueue_.pop();
 
-            // Safe to call callback on main thread
-            completion.callback(completion.result);
+            // Find and call the callback
+            // Note: The callback is stored in currentCallback_ during processing
+            if (currentCallback_) {
+                currentCallback_(result);
+                currentCallback_ = nullptr;
+            }
+        }
+    }
+
+    // LoadListener implementation
+    virtual void OnFinishLoading(ultralight::View* caller, uint64_t frame_id,
+                                bool is_main_frame, const String& url) override {
+        if (is_main_frame) {
+            debugOutput("Image loader HTML finished loading");
+            // The HTML will call onImageLoaderReady via JS bridge
+        }
+    }
+
+    virtual void OnFailLoading(ultralight::View* caller, uint64_t frame_id,
+                              bool is_main_frame, const String& url,
+                              const String& description, const String& error_domain,
+                              int error_code) override {
+        if (is_main_frame) {
+            debugOutput("ERROR: Failed to load image-loader.html");
+            isInitialized_ = false;
         }
     }
 };
 
-#endif
+#endif // IMAGELOADER_H

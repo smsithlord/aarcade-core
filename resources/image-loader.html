@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Image Loader</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: transparent;
+        }
+
+        #image-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        img {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+    <div id="image-container">
+        <img id="main-image" style="display: none;" />
+    </div>
+
+    <script>
+        // Image loader state
+        let currentUrl = '';
+        let isLoading = false;
+
+        const imageElement = document.getElementById('main-image');
+
+        // Called by C++ to load a new image
+        window.loadImageUrl = function(url) {
+            console.log('[ImageLoader] Loading image:', url);
+
+            if (isLoading) {
+                console.warn('[ImageLoader] Already loading an image, request ignored');
+                return;
+            }
+
+            currentUrl = url;
+            isLoading = true;
+
+            // Reset image
+            imageElement.style.display = 'none';
+            imageElement.src = '';
+
+            // Set up event handlers
+            imageElement.onload = function() {
+                console.log('[ImageLoader] Image loaded successfully:', currentUrl);
+                imageElement.style.display = 'block';
+                isLoading = false;
+
+                // Notify C++ that image is ready to render
+                if (window.cppBridge && window.cppBridge.onImageLoaded) {
+                    window.cppBridge.onImageLoaded(true, currentUrl);
+                } else {
+                    console.error('[ImageLoader] C++ bridge not available!');
+                }
+            };
+
+            imageElement.onerror = function() {
+                console.error('[ImageLoader] Failed to load image:', currentUrl);
+                isLoading = false;
+
+                // Notify C++ of failure
+                if (window.cppBridge && window.cppBridge.onImageLoaded) {
+                    window.cppBridge.onImageLoaded(false, currentUrl);
+                } else {
+                    console.error('[ImageLoader] C++ bridge not available!');
+                }
+            };
+
+            // Start loading
+            imageElement.src = url;
+        };
+
+        // Initialize
+        console.log('[ImageLoader] HTML page initialized and ready');
+
+        // Notify C++ that we're ready (if bridge exists)
+        if (window.cppBridge && window.cppBridge.onImageLoaderReady) {
+            window.cppBridge.onImageLoaderReady();
+        }
+    </script>
+</body>
+</html>
