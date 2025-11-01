@@ -396,6 +396,15 @@ public:
     }
 
     // LoadListener implementation
+    virtual void OnDOMReady(ultralight::View* caller, uint64_t frame_id,
+                           bool is_main_frame, const String& url) override {
+        // DOM is ready, now set up the JS bridge
+        if (is_main_frame && jsBridge_) {
+            debugOutput("DOM ready, setting up JS bridge");
+            jsBridge_->setupImageLoaderBridge(caller);
+        }
+    }
+
     virtual void OnFinishLoading(ultralight::View* caller, uint64_t frame_id,
                                 bool is_main_frame, const String& url) override {
         if (is_main_frame) {

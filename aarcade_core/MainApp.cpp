@@ -36,12 +36,10 @@ MainApp::MainApp() : jsBridge_(&dbManager_, &config_) {
     // Set the image loader reference in JSBridge
     jsBridge_.setImageLoader(imageLoader_.get());
 
-    // Set up the JS bridge for the image loader view
-    jsBridge_.setupImageLoaderBridge(imageLoader_->getView());
-
     // Set cache directory
     imageLoader_->setCacheDirectory(".\\cache\\urls");
 
+    // Note: JS bridge will be set up automatically when image-loader.html DOM is ready
     OutputDebugStringA("[MainApp] ImageLoader initialized\n");
 
     ///
