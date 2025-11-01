@@ -21,7 +21,9 @@ void ImageLoader::OnFinishLoading(ultralight::View* caller, uint64_t frame_id,
 
     if (is_main_frame) {
         debugOutput("Image loader HTML finished loading");
-        // The HTML will call onImageLoaderReady via JS bridge
+        // Manually call onImageLoaderReady since JS timing is unreliable
+        debugOutput("Calling onImageLoaderReady directly");
+        onImageLoaderReady();
     }
 }
 

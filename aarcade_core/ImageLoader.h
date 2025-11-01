@@ -328,14 +328,20 @@ public:
     void loadAndCacheImage(const std::string& url, std::function<void(const ImageLoadResult&)> callback) {
         debugOutput("Request to load image: " + url);
 
+        bool shouldProcess = false;
         {
             std::lock_guard<std::mutex> lock(queueMutex_);
             jobQueue_.push({ url, callback });
 
             // If this is the first job and we're initialized, start processing
             if (jobQueue_.size() == 1 && isInitialized_) {
-                processNextJob();
+                shouldProcess = true;
             }
+        }
+
+        // Call processNextJob AFTER releasing the lock
+        if (shouldProcess) {
+            processNextJob();
         }
     }
 
@@ -364,8 +370,14 @@ public:
         isInitialized_ = true;
 
         // Start processing queued jobs if any
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        if (!jobQueue_.empty()) {
+        bool hasJobs = false;
+        {
+            std::lock_guard<std::mutex> lock(queueMutex_);
+            hasJobs = !jobQueue_.empty();
+        }
+
+        // Call processNextJob AFTER releasing the lock
+        if (hasJobs) {
             processNextJob();
         }
     }

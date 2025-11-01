@@ -92,17 +92,22 @@
             imageElement.src = url;
         };
 
-        // Initialize when DOM is fully loaded
-        window.addEventListener('DOMContentLoaded', function() {
-            console.log('[ImageLoader] HTML page initialized and ready');
+        // Initialize - call immediately since DOM is already loaded when this script runs
+        function initializeBridge() {
+            console.log('[ImageLoader] Initializing bridge');
 
-            // Notify C++ that we're ready (bridge should be available now)
+            // Notify C++ that we're ready
             if (window.cppBridge && window.cppBridge.onImageLoaderReady) {
+                console.log('[ImageLoader] Calling onImageLoaderReady');
                 window.cppBridge.onImageLoaderReady();
             } else {
                 console.error('[ImageLoader] C++ bridge not available!');
             }
-        });
+        }
+
+        // The script runs after DOM is ready, and the C++ bridge is set up in OnDOMReady
+        // which fires before this script executes. So we can call it immediately.
+        initializeBridge();
     </script>
 </body>
 </html>
