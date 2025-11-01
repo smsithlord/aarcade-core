@@ -301,8 +301,8 @@ public:
         view_ = renderer_->CreateView(512, 512, view_config, nullptr);
         view_->set_load_listener(this);
 
-        // Load the image-loader.html file (use simple relative path like MainApp does)
-        std::string loadUrl = "file:///../../resources/image-loader.html";
+        // Load the image-loader.html file (relative to filesystem base path set in App)
+        std::string loadUrl = "file:///resources/image-loader.html";
         debugOutput("Loading HTML from: " + loadUrl);
         view_->LoadURL(loadUrl.c_str());
     }
