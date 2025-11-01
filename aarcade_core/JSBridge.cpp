@@ -863,9 +863,10 @@ void JSBridge::setupImageLoaderBridge(View* view) {
 JSValueRef JSBridge::onImageLoaded(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
     size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
     OutputDebugStringA("[JSBridge] onImageLoaded called from image-loader.html\n");
+    OutputDebugStringA(("[JSBridge] Received " + std::to_string(argumentCount) + " arguments\n").c_str());
 
-    if (argumentCount < 2) {
-        OutputDebugStringA("[JSBridge] onImageLoaded: Missing parameters (success, url)\n");
+    if (argumentCount < 6) {
+        OutputDebugStringA("[JSBridge] onImageLoaded: Missing parameters (success, url, x, y, width, height)\n");
         return JSValueMakeUndefined(ctx);
     }
 
@@ -886,11 +887,19 @@ JSValueRef JSBridge::onImageLoaded(JSContextRef ctx, JSObjectRef function, JSObj
     delete[] urlBuffer;
     JSStringRelease(urlStr);
 
+    // Get rect parameters (x, y, width, height)
+    int rectX = (int)JSValueToNumber(ctx, arguments[2], exception);
+    int rectY = (int)JSValueToNumber(ctx, arguments[3], exception);
+    int rectWidth = (int)JSValueToNumber(ctx, arguments[4], exception);
+    int rectHeight = (int)JSValueToNumber(ctx, arguments[5], exception);
+
     OutputDebugStringA(("[JSBridge] Image loaded: " + url + " (success: " + (success ? "true" : "false") + ")\n").c_str());
+    OutputDebugStringA(("[JSBridge] Rect: (" + std::to_string(rectX) + ", " + std::to_string(rectY) + ", " +
+                       std::to_string(rectWidth) + "x" + std::to_string(rectHeight) + ")\n").c_str());
 
     // Call the image loader
     if (imageLoader_) {
-        imageLoader_->onImageLoaded(success, url);
+        imageLoader_->onImageLoaded(success, url, rectX, rectY, rectWidth, rectHeight);
     } else {
         OutputDebugStringA("[JSBridge] ERROR: ImageLoader not initialized!\n");
     }

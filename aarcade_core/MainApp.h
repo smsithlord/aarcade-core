@@ -8,6 +8,7 @@
 #include "Config.h"
 #include "JSBridge.h"
 #include "ImageLoader.h"
+#include "ConsoleLogger.h"
 
 using namespace ultralight;
 
@@ -19,6 +20,7 @@ class MainApp : public WindowListener, public ViewListener, public LoadListener 
     ArcadeConfig config_;
     JSBridge jsBridge_;
     std::unique_ptr<ImageLoader> imageLoader_;
+    std::unique_ptr<ConsoleLogger> consoleLogger_;
 
 public:
     MainApp();

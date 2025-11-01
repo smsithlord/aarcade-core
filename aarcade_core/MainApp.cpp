@@ -43,6 +43,12 @@ MainApp::MainApp() : jsBridge_(&dbManager_, &config_) {
     OutputDebugStringA("[MainApp] ImageLoader initialized\n");
 
     ///
+    /// Initialize ConsoleLogger to capture JavaScript console output
+    ///
+    consoleLogger_ = std::make_unique<ConsoleLogger>();
+    OutputDebugStringA("[MainApp] ConsoleLogger initialized\n");
+
+    ///
     /// Create our Window.
     ///
     window_ = Window::Create(app_->main_monitor(), 900, 600, false, kWindowFlags_Titled);
@@ -61,8 +67,11 @@ MainApp::MainApp() : jsBridge_(&dbManager_, &config_) {
     /// Register listeners
     ///
     window_->set_listener(this);
-    overlay_->view()->set_view_listener(this);
+    overlay_->view()->set_view_listener(consoleLogger_.get());  // Use ConsoleLogger for main view
     overlay_->view()->set_load_listener(this);
+
+    // Also set ConsoleLogger for ImageLoader view
+    imageLoader_->getView()->set_view_listener(consoleLogger_.get());
 
     ///
     /// Load a local HTML file into our overlay's View

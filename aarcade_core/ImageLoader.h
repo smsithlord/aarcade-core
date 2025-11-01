@@ -21,6 +21,10 @@ struct ImageLoadResult {
     bool success;
     std::string filePath;
     std::string url;
+    int rectX;
+    int rectY;
+    int rectWidth;
+    int rectHeight;
 };
 
 /**
@@ -48,6 +52,12 @@ private:
 
     std::string currentUrl_;
     std::function<void(const ImageLoadResult&)> currentCallback_;
+
+    // Current image rect (set by JS)
+    int currentRectX_;
+    int currentRectY_;
+    int currentRectWidth_;
+    int currentRectHeight_;
 
     // Queue for pending load requests
     struct LoadJob {
@@ -193,7 +203,9 @@ private:
         if (!cachedPath.empty()) {
             debugOutput("Image already cached: " + cachedPath);
             std::lock_guard<std::mutex> lock(completionMutex_);
-            completionQueue_.push({ true, cachedPath, job.url });
+            // Note: Cached images have already been cropped, so rect is full size
+            // We could store rect info in cache metadata, but for now return 0,0,size,size
+            completionQueue_.push({ true, cachedPath, job.url, 0, 0, 0, 0 });
 
             // Process next job
             processNextJob();
@@ -214,7 +226,7 @@ private:
         if (!view_ || !isInitialized_) {
             debugOutput("ERROR: View not initialized!");
             std::lock_guard<std::mutex> lock(completionMutex_);
-            completionQueue_.push({ false, "", url });
+            completionQueue_.push({ false, "", url, 0, 0, 0, 0 });
             processNextJob();
             return;
         }
@@ -245,7 +257,7 @@ private:
         } else {
             debugOutput("ERROR: loadImageUrl function not found!");
             std::lock_guard<std::mutex> lock(completionMutex_);
-            completionQueue_.push({ false, "", url });
+            completionQueue_.push({ false, "", url, 0, 0, 0, 0 });
             processNextJob();
         }
     }
@@ -262,18 +274,56 @@ private:
         BitmapSurface* bitmap_surface = (BitmapSurface*)view_->surface();
         RefPtr<Bitmap> bitmap = bitmap_surface->bitmap();
 
+        // Crop the bitmap to the actual image rect
+        RefPtr<Bitmap> croppedBitmap;
+        if (currentRectWidth_ > 0 && currentRectHeight_ > 0) {
+            // Ensure rect is within bounds
+            int x = (std::max)(0, currentRectX_);
+            int y = (std::max)(0, currentRectY_);
+            int width = (std::min)(currentRectWidth_, (int)bitmap->width() - x);
+            int height = (std::min)(currentRectHeight_, (int)bitmap->height() - y);
+
+            debugOutput("Cropping bitmap from (" + std::to_string(x) + ", " + std::to_string(y) + ") " +
+                       "size " + std::to_string(width) + "x" + std::to_string(height));
+
+            // Create a new bitmap with the cropped size
+            croppedBitmap = Bitmap::Create(width, height, BitmapFormat::BGRA8_UNORM_SRGB);
+
+            // Copy the pixel data
+            uint8_t* src_pixels = (uint8_t*)bitmap->LockPixels();
+            uint8_t* dst_pixels = (uint8_t*)croppedBitmap->LockPixels();
+
+            uint32_t src_row_bytes = bitmap->row_bytes();
+            uint32_t dst_row_bytes = croppedBitmap->row_bytes();
+            uint32_t bytes_per_pixel = 4; // BGRA8
+
+            for (int row = 0; row < height; row++) {
+                uint8_t* src_row = src_pixels + ((y + row) * src_row_bytes) + (x * bytes_per_pixel);
+                uint8_t* dst_row = dst_pixels + (row * dst_row_bytes);
+                memcpy(dst_row, src_row, width * bytes_per_pixel);
+            }
+
+            croppedBitmap->UnlockPixels();
+            bitmap->UnlockPixels();
+        } else {
+            // No valid rect, save the full bitmap
+            debugOutput("Warning: Invalid rect, saving full bitmap");
+            croppedBitmap = bitmap;
+        }
+
         // Get output path
         std::string outputPath = getCacheFilePath(currentUrl_);
 
         // Save to file
-        bitmap->WritePNG(outputPath.c_str());
+        croppedBitmap->WritePNG(outputPath.c_str());
 
         debugOutput("Image rendered and saved: " + outputPath);
 
-        // Queue completion
+        // Queue completion with rect info
         {
             std::lock_guard<std::mutex> lock(completionMutex_);
-            completionQueue_.push({ true, outputPath, currentUrl_ });
+            completionQueue_.push({ true, outputPath, currentUrl_,
+                                   currentRectX_, currentRectY_, currentRectWidth_, currentRectHeight_ });
         }
 
         // Process next job
@@ -282,7 +332,8 @@ private:
 
 public:
     ImageLoader(RefPtr<Renderer> renderer, JSBridge* jsBridge)
-        : renderer_(renderer), jsBridge_(jsBridge), isInitialized_(false), isImageReady_(false) {
+        : renderer_(renderer), jsBridge_(jsBridge), isInitialized_(false), isImageReady_(false),
+          currentRectX_(0), currentRectY_(0), currentRectWidth_(0), currentRectHeight_(0) {
 
         debugOutput("Initializing ImageLoader...");
 
@@ -301,10 +352,15 @@ public:
         view_ = renderer_->CreateView(512, 512, view_config, nullptr);
         view_->set_load_listener(this);
 
-        // Load the image-loader.html file (relative to filesystem base path set in App)
-        std::string loadUrl = "file:///assets/image-loader.html";
+        // Load the image-loader.html file with cache-busting parameter and force reload
+        // (relative to filesystem base path set in App)
+        std::string loadUrl = "file:///assets/image-loader.html?v=3";
         debugOutput("Loading HTML from: " + loadUrl);
         view_->LoadURL(loadUrl.c_str());
+
+        // Force reload to bypass cache
+        debugOutput("Forcing reload to bypass cache");
+        view_->Reload();
     }
 
     virtual ~ImageLoader() {
@@ -346,20 +402,28 @@ public:
     }
 
     // Called from JS bridge when image is loaded and ready
-    void onImageLoaded(bool success, const std::string& url) {
+    void onImageLoaded(bool success, const std::string& url, int rectX, int rectY, int rectWidth, int rectHeight) {
         debugOutput("onImageLoaded called: " + url + " (success: " + (success ? "true" : "false") + ")");
+        debugOutput("Image rect: (" + std::to_string(rectX) + ", " + std::to_string(rectY) + ", " +
+                   std::to_string(rectWidth) + "x" + std::to_string(rectHeight) + ")");
 
         if (url != currentUrl_) {
             debugOutput("WARNING: URL mismatch! Expected: " + currentUrl_ + ", Got: " + url);
         }
 
         if (success) {
+            // Store rect coordinates
+            currentRectX_ = rectX;
+            currentRectY_ = rectY;
+            currentRectWidth_ = rectWidth;
+            currentRectHeight_ = rectHeight;
+
             isImageReady_ = true;
             renderAndSave();
         } else {
             debugOutput("Image load failed");
             std::lock_guard<std::mutex> lock(completionMutex_);
-            completionQueue_.push({ false, "", url });
+            completionQueue_.push({ false, "", url, 0, 0, 0, 0 });
             processNextJob();
         }
     }
