@@ -301,15 +301,17 @@ public:
         view_ = renderer_->CreateView(512, 512, view_config, nullptr);
         view_->set_load_listener(this);
 
-        // Get current working directory for debug output
+        // Load the image-loader.html file (relative to executable)
+        std::string resourcePath = "..\\..\\resources\\image-loader.html";
+
+        // Get absolute path for debug output
         char currentDir[MAX_PATH];
         GetCurrentDirectoryA(MAX_PATH, currentDir);
-        std::string resourcePath = std::string(currentDir) + "\\resources\\image-loader.html";
+        std::string fullPath = std::string(currentDir) + "\\" + resourcePath;
+        debugOutput("Loading HTML from: " + fullPath);
 
-        debugOutput("Loading HTML from: " + resourcePath);
-
-        // Load the image-loader.html file
-        String file_url = String("file:///") + String(resourcePath.c_str());
+        // Load using relative path
+        String file_url = String("file:///") + String(fullPath.c_str());
         view_->LoadURL(file_url);
     }
 
