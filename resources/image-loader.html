@@ -92,13 +92,17 @@
             imageElement.src = url;
         };
 
-        // Initialize
-        console.log('[ImageLoader] HTML page initialized and ready');
+        // Initialize when DOM is fully loaded
+        window.addEventListener('DOMContentLoaded', function() {
+            console.log('[ImageLoader] HTML page initialized and ready');
 
-        // Notify C++ that we're ready (if bridge exists)
-        if (window.cppBridge && window.cppBridge.onImageLoaderReady) {
-            window.cppBridge.onImageLoaderReady();
-        }
+            // Notify C++ that we're ready (bridge should be available now)
+            if (window.cppBridge && window.cppBridge.onImageLoaderReady) {
+                window.cppBridge.onImageLoaderReady();
+            } else {
+                console.error('[ImageLoader] C++ bridge not available!');
+            }
+        });
     </script>
 </body>
 </html>
