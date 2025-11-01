@@ -1,0 +1,29 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug AARcade Core",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/release/x64/aarcade-core.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/release/x64",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "C/C++: Build AARcade Core"
+        },
+        {
+            "name": "Debug Current File",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/release/x64/${fileBasenameNoExtension}.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/release/x64",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "C/C++: cl.exe build Ultralight app"
+        }
+    ]
+}
