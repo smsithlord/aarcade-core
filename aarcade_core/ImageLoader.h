@@ -395,33 +395,17 @@ public:
         }
     }
 
-    // LoadListener implementation
+    // LoadListener implementation (defined in ImageLoader.cpp)
     virtual void OnDOMReady(ultralight::View* caller, uint64_t frame_id,
-                           bool is_main_frame, const String& url) override {
-        // DOM is ready, now set up the JS bridge
-        if (is_main_frame && jsBridge_) {
-            debugOutput("DOM ready, setting up JS bridge");
-            jsBridge_->setupImageLoaderBridge(caller);
-        }
-    }
+                           bool is_main_frame, const String& url) override;
 
     virtual void OnFinishLoading(ultralight::View* caller, uint64_t frame_id,
-                                bool is_main_frame, const String& url) override {
-        if (is_main_frame) {
-            debugOutput("Image loader HTML finished loading");
-            // The HTML will call onImageLoaderReady via JS bridge
-        }
-    }
+                                bool is_main_frame, const String& url) override;
 
     virtual void OnFailLoading(ultralight::View* caller, uint64_t frame_id,
                               bool is_main_frame, const String& url,
                               const String& description, const String& error_domain,
-                              int error_code) override {
-        if (is_main_frame) {
-            debugOutput("ERROR: Failed to load image-loader.html");
-            isInitialized_ = false;
-        }
-    }
+                              int error_code) override;
 };
 
 #endif // IMAGELOADER_H

@@ -6,7 +6,7 @@
             "command": "cmd.exe",
             "args": [
                 "/c",
-                "\"F:\\Installed Programs\\Visual Studio Community 2022\\VC\\Auxiliary\\Build\\vcvarsall.bat\" x64 && cl.exe /Zi /EHsc /nologo /std:c++17 /I\"${workspaceFolder}\\include\" /I\"${workspaceFolder}\\aarcade_core\" /I\"${workspaceFolder}\\vcpkg_installed\\x64-windows\\include\" /Fe\"${workspaceFolder}\\release\\x64\\aarcade-core.exe\" \"${workspaceFolder}\\aarcade-core.cpp\" \"${workspaceFolder}\\aarcade_core\\MainApp.cpp\" \"${workspaceFolder}\\aarcade_core\\JSBridge.cpp\" /link /MACHINE:X64 /LIBPATH:\"${workspaceFolder}\\lib\" /LIBPATH:\"${workspaceFolder}\\vcpkg_installed\\x64-windows\\lib\" AppCore.lib Ultralight.lib UltralightCore.lib WebCore.lib sqlite3.lib libcurl.lib"
+                "\"F:\\Installed Programs\\Visual Studio Community 2022\\VC\\Auxiliary\\Build\\vcvarsall.bat\" x64 && cl.exe /Zi /EHsc /nologo /std:c++17 /I\"${workspaceFolder}\\include\" /I\"${workspaceFolder}\\aarcade_core\" /I\"${workspaceFolder}\\vcpkg_installed\\x64-windows\\include\" /Fe\"${workspaceFolder}\\release\\x64\\aarcade-core.exe\" \"${workspaceFolder}\\aarcade-core.cpp\" \"${workspaceFolder}\\aarcade_core\\MainApp.cpp\" \"${workspaceFolder}\\aarcade_core\\JSBridge.cpp\" \"${workspaceFolder}\\aarcade_core\\ImageLoader.cpp\" /link /MACHINE:X64 /LIBPATH:\"${workspaceFolder}\\lib\" /LIBPATH:\"${workspaceFolder}\\vcpkg_installed\\x64-windows\\lib\" AppCore.lib Ultralight.lib UltralightCore.lib WebCore.lib sqlite3.lib libcurl.lib"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
