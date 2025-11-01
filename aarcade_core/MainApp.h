@@ -3,9 +3,11 @@
 #include <AppCore/App.h>
 #include <AppCore/Overlay.h>
 #include <AppCore/Window.h>
+#include <memory>
 #include "SQLiteManager.h"
 #include "Config.h"
 #include "JSBridge.h"
+#include "ImageLoader.h"
 
 using namespace ultralight;
 
@@ -16,6 +18,7 @@ class MainApp : public WindowListener, public ViewListener, public LoadListener 
     SQLiteManager dbManager_;
     ArcadeConfig config_;
     JSBridge jsBridge_;
+    std::unique_ptr<ImageLoader> imageLoader_;
 
 public:
     MainApp();

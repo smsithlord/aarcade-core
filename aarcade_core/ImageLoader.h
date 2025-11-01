@@ -325,6 +325,11 @@ public:
         debugOutput("Cache directory set to: " + cacheBasePath_);
     }
 
+    // Get the view (for JS bridge setup)
+    View* getView() const {
+        return view_.get();
+    }
+
     // Load and cache an image URL
     void loadAndCacheImage(const std::string& url, std::function<void(const ImageLoadResult&)> callback) {
         debugOutput("Request to load image: " + url);

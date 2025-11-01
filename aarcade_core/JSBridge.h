@@ -17,8 +17,8 @@ class JSBridge {
 private:
     SQLiteManager* dbManager_;
     ArcadeConfig* config_;
-    std::unique_ptr<ImageLoader> imageLoader_;
-    RefPtr<Renderer> renderer_; // Store renderer for image downloader
+    ImageLoader* imageLoader_; // Weak pointer, owned by MainApp
+    RefPtr<Renderer> renderer_; // Store renderer for future use
 
 public:
     // Constructor takes references to the managers it needs
@@ -28,8 +28,14 @@ public:
     // Main entry point - called from MainApp::OnWindowObjectReady
     void setupJavaScriptBridge(View* view, uint64_t frame_id, bool is_main_frame, const String& url);
 
+    // Setup JS bridge for image loader view
+    void setupImageLoaderBridge(View* view);
+
     // Set the app (to access renderer)
     void setApp(RefPtr<App> app);
+
+    // Set the image loader (owned by MainApp)
+    void setImageLoader(ImageLoader* imageLoader);
 
     std::string convertToFileUrl(const std::string& filePath);
 
@@ -66,6 +72,13 @@ public:
         size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 
     JSValueRef processImageCompletions(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+        size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
+
+    // Image loader bridge methods (called from image-loader.html)
+    JSValueRef onImageLoaded(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+        size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
+
+    JSValueRef onImageLoaderReady(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
         size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 
     // Utility method
@@ -112,6 +125,12 @@ JSValueRef getCacheImageCallback(JSContextRef ctx, JSObjectRef function, JSObjec
     size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 
 JSValueRef getSupportedEntryTypesCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
+
+JSValueRef onImageLoadedCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
+
+JSValueRef onImageLoaderReadyCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
     size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 
 #endif

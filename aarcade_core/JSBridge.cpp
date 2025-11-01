@@ -1,9 +1,6 @@
 #include "JSBridge.h"
 #include "ImageLoader.h"
-#include "CurlImageDownloader.h"
-#include "UltralightImageDownloader.h"
 #include <windows.h>
-#include <curl/curl.h>
 
 // Static instance for callback access
 static JSBridge* g_jsBridgeInstance = nullptr;
@@ -108,15 +105,30 @@ JSValueRef getSupportedEntryTypesCallback(JSContextRef ctx, JSObjectRef function
     return JSValueMakeNull(ctx);
 }
 
+JSValueRef onImageLoadedCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    JSBridge* bridge = JSBridge::getInstance();
+    if (bridge) {
+        return bridge->onImageLoaded(ctx, function, thisObject, argumentCount, arguments, exception);
+    }
+    return JSValueMakeUndefined(ctx);
+}
+
+JSValueRef onImageLoaderReadyCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    JSBridge* bridge = JSBridge::getInstance();
+    if (bridge) {
+        return bridge->onImageLoaderReady(ctx, function, thisObject, argumentCount, arguments, exception);
+    }
+    return JSValueMakeUndefined(ctx);
+}
+
 JSBridge::JSBridge(SQLiteManager* dbManager, ArcadeConfig* config)
-    : dbManager_(dbManager), config_(config), renderer_(nullptr) {
+    : dbManager_(dbManager), config_(config), renderer_(nullptr), imageLoader_(nullptr) {
     // Set this as the global instance
     setInstance(this);
 
-    // Initialize curl globally (required for CurlImageDownloader)
-    // curl_global_init(CURL_GLOBAL_DEFAULT);
-
-    // ImageLoader will be initialized in setupJavaScriptBridge once we have access to the renderer
+    // ImageLoader will be set by MainApp after initialization
 
     // Get current working directory for debug output
     char currentDir[MAX_PATH];
@@ -131,11 +143,7 @@ JSBridge::~JSBridge() {
         g_jsBridgeInstance = nullptr;
     }
 
-    // ImageLoader cleanup is automatic with unique_ptr
-    // This will also trigger downloader cleanup
-
-    // Cleanup curl globally (only needed for CurlImageDownloader)
-    // curl_global_cleanup();
+    // ImageLoader is owned by MainApp, no cleanup needed here
 }
 
 void JSBridge::setApp(RefPtr<App> app) {
@@ -145,30 +153,16 @@ void JSBridge::setApp(RefPtr<App> app) {
     }
 }
 
+void JSBridge::setImageLoader(ImageLoader* imageLoader) {
+    imageLoader_ = imageLoader;
+    OutputDebugStringA("[JSBridge] ImageLoader reference set\n");
+}
+
 void JSBridge::setupJavaScriptBridge(View* view, uint64_t frame_id, bool is_main_frame, const String& url) {
     if (!is_main_frame) return;
 
-    // Initialize ImageLoader on first call when we have the renderer
-    if (!imageLoader_ && renderer_) {
-        // ============================================================================
-        // IMAGE DOWNLOADER SWITCH - Change this to toggle between implementations
-        // ============================================================================
-        const bool USE_ULTRALIGHT_DOWNLOADER = true;  // Set to true for Ultralight, false for libcurl
-
-        if (USE_ULTRALIGHT_DOWNLOADER) {
-            // Ultralight: Renders images to 512x512 PNG thumbnails
-            imageLoader_ = std::make_unique<ImageLoader>(std::make_unique<UltralightImageDownloader>(renderer_, 512, 512));
-            OutputDebugStringA("[JSBridge] ImageLoader initialized with Ultralight downloader\n");
-        } else {
-            // libcurl: Direct downloads with automatic format detection
-            imageLoader_ = std::make_unique<ImageLoader>(std::make_unique<CurlImageDownloader>());
-            OutputDebugStringA("[JSBridge] ImageLoader initialized with libcurl downloader\n");
-        }
-
-        // Set up ImageLoader cache directory
-        std::string cacheDir = ".\\cache\\urls";
-        imageLoader_->setCacheDirectory(cacheDir);
-    }
+    // NOTE: ImageLoader is now initialized in MainApp after renderer is ready
+    // It uses its own dedicated view for rendering images to cache
 
     // Acquire the JS execution context for the current page
     auto scoped_context = view->LockJSContext();
@@ -356,12 +350,16 @@ JSValueRef JSBridge::getCacheImage(JSContextRef ctx, JSObjectRef function, JSObj
     JSValueProtect(ctx, promiseObj);
 
     // Start the image loading process
-    imageLoader_->loadImage(url, [this, ctx, promiseObj](const ImageLoadResult& result) {
+    if (!imageLoader_) {
+        OutputDebugStringA("[JSBridge] ERROR: ImageLoader not initialized!\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    imageLoader_->loadAndCacheImage(url, [this, ctx, promiseObj](const ImageLoadResult& result) {
         if (result.success) {
             // Convert to file:// URL
             std::string fileUrl = convertToFileUrl(result.filePath);
-            OutputDebugStringA(("[JSBridge] Image cached successfully: " + fileUrl +
-                              " (downloader: " + result.downloaderName + ")\n").c_str());
+            OutputDebugStringA(("[JSBridge] Image cached successfully: " + fileUrl + "\n").c_str());
 
             // Get the resolve callback
             JSStringRef resolveKey = JSStringCreateWithUTF8CString("_resolve");
@@ -369,7 +367,7 @@ JSValueRef JSBridge::getCacheImage(JSContextRef ctx, JSObjectRef function, JSObj
             JSStringRelease(resolveKey);
 
             if (JSValueIsObject(ctx, resolveFunc)) {
-                // Create result object with filePath and downloaderName
+                // Create result object with filePath
                 JSObjectRef resultObj = JSObjectMake(ctx, nullptr, nullptr);
 
                 // Set filePath property
@@ -379,14 +377,6 @@ JSValueRef JSBridge::getCacheImage(JSContextRef ctx, JSObjectRef function, JSObj
                 JSObjectSetProperty(ctx, resultObj, filePathKey, filePathValue, 0, 0);
                 JSStringRelease(filePathKey);
                 JSStringRelease(filePathStr);
-
-                // Set downloaderName property
-                JSStringRef downloaderKey = JSStringCreateWithUTF8CString("downloaderName");
-                JSStringRef downloaderStr = JSStringCreateWithUTF8CString(result.downloaderName.c_str());
-                JSValueRef downloaderValue = JSValueMakeString(ctx, downloaderStr);
-                JSObjectSetProperty(ctx, resultObj, downloaderKey, downloaderValue, 0, 0);
-                JSStringRelease(downloaderKey);
-                JSStringRelease(downloaderStr);
 
                 // Call the resolve function with the result object
                 JSValueRef args[] = { resultObj };
@@ -831,6 +821,95 @@ JSValueRef JSBridge::getFirstSearchResults(JSContextRef ctx, JSObjectRef functio
     std::vector<std::pair<std::string, std::string>> results = dbManager_->getFirstSearchResults(entryType, searchTerm, count);
 
     return createJSArray(ctx, results);
+}
+
+// Setup JS bridge for image loader view
+void JSBridge::setupImageLoaderBridge(View* view) {
+    OutputDebugStringA("[JSBridge] Setting up image loader JS bridge\n");
+
+    // Acquire the JS execution context
+    auto scoped_context = view->LockJSContext();
+    JSContextRef ctx = (*scoped_context);
+
+    // Get the global JavaScript object (aka 'window')
+    JSObjectRef globalObj = JSContextGetGlobalObject(ctx);
+
+    // Create the 'cppBridge' object for image loader
+    JSObjectRef bridgeObj = JSObjectMake(ctx, nullptr, nullptr);
+
+    // Register onImageLoaded method
+    JSStringRef methodName = JSStringCreateWithUTF8CString("onImageLoaded");
+    JSObjectRef methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, onImageLoadedCallback);
+    JSObjectSetProperty(ctx, bridgeObj, methodName, methodFunc, 0, 0);
+    JSStringRelease(methodName);
+
+    // Register onImageLoaderReady method
+    methodName = JSStringCreateWithUTF8CString("onImageLoaderReady");
+    methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, onImageLoaderReadyCallback);
+    JSObjectSetProperty(ctx, bridgeObj, methodName, methodFunc, 0, 0);
+    JSStringRelease(methodName);
+
+    // Add the cppBridge object to the global object
+    JSStringRef bridgeName = JSStringCreateWithUTF8CString("cppBridge");
+    JSObjectSetProperty(ctx, globalObj, bridgeName, bridgeObj, 0, 0);
+    JSStringRelease(bridgeName);
+
+    OutputDebugStringA("[JSBridge] Image loader JS bridge registered:\n");
+    OutputDebugStringA("[JSBridge]   - window.cppBridge.onImageLoaded\n");
+    OutputDebugStringA("[JSBridge]   - window.cppBridge.onImageLoaderReady\n");
+}
+
+// Image loader bridge method implementations
+JSValueRef JSBridge::onImageLoaded(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    OutputDebugStringA("[JSBridge] onImageLoaded called from image-loader.html\n");
+
+    if (argumentCount < 2) {
+        OutputDebugStringA("[JSBridge] onImageLoaded: Missing parameters (success, url)\n");
+        return JSValueMakeUndefined(ctx);
+    }
+
+    // Get success from first argument
+    bool success = JSValueToBoolean(ctx, arguments[0]);
+
+    // Get URL from second argument
+    JSStringRef urlStr = JSValueToStringCopy(ctx, arguments[1], exception);
+    if (!urlStr) {
+        OutputDebugStringA("[JSBridge] onImageLoaded: Invalid URL parameter\n");
+        return JSValueMakeUndefined(ctx);
+    }
+
+    size_t urlLength = JSStringGetMaximumUTF8CStringSize(urlStr);
+    char* urlBuffer = new char[urlLength];
+    JSStringGetUTF8CString(urlStr, urlBuffer, urlLength);
+    std::string url(urlBuffer);
+    delete[] urlBuffer;
+    JSStringRelease(urlStr);
+
+    OutputDebugStringA(("[JSBridge] Image loaded: " + url + " (success: " + (success ? "true" : "false") + ")\n").c_str());
+
+    // Call the image loader
+    if (imageLoader_) {
+        imageLoader_->onImageLoaded(success, url);
+    } else {
+        OutputDebugStringA("[JSBridge] ERROR: ImageLoader not initialized!\n");
+    }
+
+    return JSValueMakeUndefined(ctx);
+}
+
+JSValueRef JSBridge::onImageLoaderReady(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    OutputDebugStringA("[JSBridge] onImageLoaderReady called from image-loader.html\n");
+
+    // Call the image loader
+    if (imageLoader_) {
+        imageLoader_->onImageLoaderReady();
+    } else {
+        OutputDebugStringA("[JSBridge] ERROR: ImageLoader not initialized!\n");
+    }
+
+    return JSValueMakeUndefined(ctx);
 }
 
 // Static instance management

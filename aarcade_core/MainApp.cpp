@@ -29,6 +29,22 @@ MainApp::MainApp() : jsBridge_(&dbManager_, &config_) {
     jsBridge_.setApp(app_);
 
     ///
+    /// Initialize ImageLoader with the renderer and JSBridge
+    ///
+    imageLoader_ = std::make_unique<ImageLoader>(app_->renderer(), &jsBridge_);
+
+    // Set the image loader reference in JSBridge
+    jsBridge_.setImageLoader(imageLoader_.get());
+
+    // Set up the JS bridge for the image loader view
+    jsBridge_.setupImageLoaderBridge(imageLoader_->getView());
+
+    // Set cache directory
+    imageLoader_->setCacheDirectory(".\\cache\\urls");
+
+    OutputDebugStringA("[MainApp] ImageLoader initialized\n");
+
+    ///
     /// Create our Window.
     ///
     window_ = Window::Create(app_->main_monitor(), 900, 600, false, kWindowFlags_Titled);
