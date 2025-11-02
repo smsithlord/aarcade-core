@@ -20,6 +20,7 @@ private:
     ArcadeConfig* config_;
     ImageLoader* imageLoader_; // Weak pointer, owned by MainApp
     RefPtr<Renderer> renderer_; // Store renderer for future use
+    RefPtr<App> app_; // Store app for quit functionality
     Library* library_; // Library manager for arcade functionality
 
 public:
@@ -87,6 +88,10 @@ public:
     JSValueRef getSupportedEntryTypes(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
         size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 
+    // Application control methods
+    JSValueRef quitApplication(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+        size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
+
     // Helper functions
     JSObjectRef arcadeKeyValuesToJSObject(JSContextRef ctx, const ArcadeKeyValues* kv);
     JSObjectRef entryDataToJSObject(JSContextRef ctx, const std::string& entryId, const std::string& hexData);
@@ -133,6 +138,9 @@ JSValueRef onImageLoadedCallback(JSContextRef ctx, JSObjectRef function, JSObjec
     size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 
 JSValueRef onImageLoaderReadyCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
+
+JSValueRef quitApplicationCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
     size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 
 #endif

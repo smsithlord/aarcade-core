@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arcade Core - Welcome</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 50px 40px;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            min-width: 700px;
+            max-width: 900px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 42px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 50px;
+            font-size: 18px;
+        }
+
+        .nav-section {
+            margin-bottom: 30px;
+        }
+
+        .nav-card {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            text-decoration: none;
+            display: block;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .nav-card:hover {
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+        }
+
+        .nav-card.library {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .nav-card.image-test {
+            background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
+        }
+
+        .nav-card.database {
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+        }
+
+        .nav-card-title {
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+
+        .nav-card.library .nav-card-title,
+        .nav-card.image-test .nav-card-title,
+        .nav-card.database .nav-card-title {
+            color: #fff;
+        }
+
+        .nav-card-description {
+            font-size: 16px;
+            color: rgba(255, 255, 255, 0.9);
+            line-height: 1.6;
+        }
+
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #e0e0e0;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .exit-button {
+            margin-top: 20px;
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3);
+        }
+
+        .exit-button:hover {
+            box-shadow: 0 6px 20px rgba(231, 76, 60, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .exit-button:active {
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 Arcade Core</h1>
+        <p class="subtitle">Welcome to your gaming database management system</p>
+
+        <div class="nav-section">
+            <a href="library.html" class="nav-card library">
+                <div class="nav-card-title">📚 Library Browser</div>
+                <div class="nav-card-description">
+                    Browse and explore your gaming database entries with a modern, card-based interface.
+                    View items, apps, instances, maps, models, platforms, and types.
+                </div>
+            </a>
+
+            <a href="image-test.html" class="nav-card image-test">
+                <div class="nav-card-title">🖼️ Image Loader Tester</div>
+                <div class="nav-card-description">
+                    Test the image caching system with aspect ratio preservation and automatic cropping.
+                    Supports loading images from any URL with intelligent caching.
+                </div>
+            </a>
+
+            <a href="page.html" class="nav-card database">
+                <div class="nav-card-title">🔧 Database Tools</div>
+                <div class="nav-card-description">
+                    Access advanced database debugging and browsing tools. Run queries,
+                    analyze database structure, and interact with all table types.
+                </div>
+            </a>
+        </div>
+
+        <div class="footer">
+            Select a tool above to get started
+            <br>
+            <button class="exit-button" onclick="exitApplication()">Exit Application</button>
+        </div>
+    </div>
+
+    <script>
+        function exitApplication() {
+            if (typeof aapi !== 'undefined' && aapi.quitApplication) {
+                console.log('Calling quitApplication...');
+                aapi.quitApplication();
+            } else {
+                console.error('aapi.quitApplication is not available');
+                alert('Exit function is not available');
+            }
+        }
+    </script>
+</body>
+</html>

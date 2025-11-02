@@ -123,8 +123,17 @@ JSValueRef onImageLoaderReadyCallback(JSContextRef ctx, JSObjectRef function, JS
     return JSValueMakeUndefined(ctx);
 }
 
+JSValueRef quitApplicationCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    JSBridge* bridge = JSBridge::getInstance();
+    if (bridge) {
+        return bridge->quitApplication(ctx, function, thisObject, argumentCount, arguments, exception);
+    }
+    return JSValueMakeBoolean(ctx, false);
+}
+
 JSBridge::JSBridge(SQLiteManager* dbManager, ArcadeConfig* config, Library* library)
-    : dbManager_(dbManager), config_(config), library_(library), renderer_(nullptr), imageLoader_(nullptr) {
+    : dbManager_(dbManager), config_(config), library_(library), renderer_(nullptr), app_(nullptr), imageLoader_(nullptr) {
     // Set this as the global instance
     setInstance(this);
 
@@ -147,9 +156,12 @@ JSBridge::~JSBridge() {
 }
 
 void JSBridge::setApp(RefPtr<App> app) {
-    if (app && !renderer_) {
-        renderer_ = app->renderer();
-        OutputDebugStringA("[JSBridge] Renderer obtained from App\n");
+    if (app) {
+        app_ = app;
+        if (!renderer_) {
+            renderer_ = app->renderer();
+            OutputDebugStringA("[JSBridge] Renderer obtained from App\n");
+        }
     }
 }
 
@@ -231,6 +243,12 @@ void JSBridge::setupJavaScriptBridge(View* view, uint64_t frame_id, bool is_main
     // Register utility method
     methodName = JSStringCreateWithUTF8CString("getSupportedEntryTypes");
     methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, getSupportedEntryTypesCallback);
+    JSObjectSetProperty(ctx, aapiObj, methodName, methodFunc, 0, 0);
+    JSStringRelease(methodName);
+
+    // Register application control methods
+    methodName = JSStringCreateWithUTF8CString("quitApplication");
+    methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, quitApplicationCallback);
     JSObjectSetProperty(ctx, aapiObj, methodName, methodFunc, 0, 0);
     JSStringRelease(methodName);
 
@@ -574,6 +592,21 @@ JSValueRef JSBridge::getSupportedEntryTypes(JSContextRef ctx, JSObjectRef functi
 
     // Convert to JavaScript array
     return createStringArray(ctx, supportedTypes);
+}
+
+JSValueRef JSBridge::quitApplication(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    OutputDebugStringA("[JSBridge] quitApplication called from JavaScript\n");
+
+    if (app_) {
+        app_->Quit();
+        OutputDebugStringA("[JSBridge] Application quit requested\n");
+        return JSValueMakeBoolean(ctx, true);
+    }
+    else {
+        OutputDebugStringA("[JSBridge] ERROR: App instance not available\n");
+        return JSValueMakeBoolean(ctx, false);
+    }
 }
 
 JSValueRef JSBridge::getFirstEntry(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
