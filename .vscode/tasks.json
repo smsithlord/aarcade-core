@@ -1,6 +1,20 @@
 {
     "tasks": [
         {
+            "label": "Copy Assets",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-Command",
+                "New-Item -ItemType Directory -Path '${workspaceFolder}\\release\\x64\\assets' -Force | Out-Null; Copy-Item -Path '${workspaceFolder}\\assets\\*' -Destination '${workspaceFolder}\\release\\x64\\assets\\' -Force; Write-Host 'Assets copied to release/x64/assets/'"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Copy asset files from assets/ to release/x64/assets/"
+        },
+        {
             "type": "cppbuild",
             "label": "C/C++: Build AARcade Core",
             "command": "cmd.exe",
@@ -18,7 +32,8 @@
                 "kind": "build",
                 "isDefault": true
             },
-            "detail": "Build AARcade Core application with all dependencies"
+            "detail": "Build AARcade Core application with all dependencies",
+            "dependsOn": ["Copy Assets"]
         },
         {
             "type": "cppbuild",
