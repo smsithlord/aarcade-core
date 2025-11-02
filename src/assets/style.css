@@ -167,6 +167,33 @@ body {
     background: linear-gradient(45deg, #f0f0f0, #e0e0e0);
 }
 
+.card-image.loading {
+    opacity: 0.6;
+    filter: blur(2px);
+    transition: opacity 0.3s ease, filter 0.3s ease;
+}
+
+.card-image.loaded {
+    opacity: 1;
+    filter: none;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0.6;
+        filter: blur(2px);
+    }
+    to {
+        opacity: 1;
+        filter: none;
+    }
+}
+
+.card-image.error {
+    display: none;
+}
+
 .card-content {
     padding: 15px;
 }
@@ -358,6 +385,18 @@ body {
     max-width: 100%;
     border-radius: 8px;
     margin-top: 10px;
+}
+
+.detail-image.loading {
+    opacity: 0.6;
+    filter: blur(2px);
+    transition: opacity 0.3s ease, filter 0.3s ease;
+}
+
+.detail-image.loaded {
+    opacity: 1;
+    filter: none;
+    animation: fadeIn 0.3s ease;
 }
 
 /* Responsive design */
