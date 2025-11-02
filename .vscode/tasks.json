@@ -5,75 +5,27 @@
             "type": "shell",
             "command": "powershell",
             "args": [
-                "-Command",
-                "$ErrorActionPreference='Continue'; $ws='${workspaceFolder}'; Write-Host 'Deploying runtime files to x64/Release...'; New-Item -ItemType Directory -Path \"$ws\\x64\\Release\" -Force | Out-Null; New-Item -ItemType Directory -Path \"$ws\\x64\\Release\\assets\" -Force | Out-Null; New-Item -ItemType Directory -Path \"$ws\\x64\\Release\\resources\" -Force | Out-Null; Copy-Item -Path \"$ws\\src\\assets\\*\" -Destination \"$ws\\x64\\Release\\assets\\\" -Force; Write-Host '  Copied assets/'; Copy-Item -Path \"$ws\\src\\resources\\*\" -Destination \"$ws\\x64\\Release\\resources\\\" -Force; Write-Host '  Copied resources/'; Copy-Item -Path \"$ws\\src\\config.ini\" -Destination \"$ws\\x64\\Release\\\" -Force; Write-Host '  Copied config.ini'; if (Test-Path \"$ws\\vcpkg_installed\\x64-windows\\bin\\libcurl.dll\") { Copy-Item -Path \"$ws\\vcpkg_installed\\x64-windows\\bin\\libcurl.dll\" -Destination \"$ws\\x64\\Release\\\" -Force; Write-Host '  Copied libcurl.dll' }; if (Test-Path \"$ws\\vcpkg_installed\\x64-windows\\bin\\zlib1.dll\") { Copy-Item -Path \"$ws\\vcpkg_installed\\x64-windows\\bin\\zlib1.dll\" -Destination \"$ws\\x64\\Release\\\" -Force; Write-Host '  Copied zlib1.dll' }; if (Test-Path \"$ws\\vcpkg_installed\\x64-windows\\bin\\sqlite3.dll\") { Copy-Item -Path \"$ws\\vcpkg_installed\\x64-windows\\bin\\sqlite3.dll\" -Destination \"$ws\\x64\\Release\\\" -Force; Write-Host '  Copied sqlite3.dll' }; if (Test-Path \"$ws\\lib\\AppCore.dll\") { Copy-Item -Path \"$ws\\lib\\*.dll\" -Destination \"$ws\\x64\\Release\\\" -Force -ErrorAction SilentlyContinue; Write-Host '  Copied Ultralight DLLs from lib/' }; Write-Host 'Runtime deployment complete!'"
+                "-ExecutionPolicy", "Bypass",
+                "-File", "${workspaceFolder}\\.vscode\\deploy.ps1"
             ],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
             "problemMatcher": [],
-            "detail": "Deploy all runtime dependencies (DLLs, assets, resources, config) to x64/Release/"
+            "detail": "Deploy all runtime dependencies to x64/Release"
         },
         {
-            "type": "cppbuild",
-            "label": "C/C++: Build AARcade Core",
-            "command": "cmd.exe",
+            "label": "Build AARcade Core",
+            "type": "shell",
+            "command": "powershell",
             "args": [
-                "/c",
-                "\"F:\\Installed Programs\\Visual Studio Community 2022\\VC\\Auxiliary\\Build\\vcvarsall.bat\" x64 && cl.exe /Zi /EHsc /nologo /std:c++17 /I\"${workspaceFolder}\\include\" /I\"${workspaceFolder}\\aarcade_core\" /I\"${workspaceFolder}\\vcpkg_installed\\x64-windows\\include\" /Fe\"${workspaceFolder}\\x64\\Release\\aarcade-core.exe\" \"${workspaceFolder}\\aarcade-core.cpp\" \"${workspaceFolder}\\aarcade_core\\MainApp.cpp\" \"${workspaceFolder}\\aarcade_core\\JSBridge.cpp\" \"${workspaceFolder}\\aarcade_core\\ImageLoader.cpp\" \"${workspaceFolder}\\aarcade_core\\ConsoleLogger.cpp\" /link /MACHINE:X64 /LIBPATH:\"${workspaceFolder}\\lib\" /LIBPATH:\"${workspaceFolder}\\vcpkg_installed\\x64-windows\\lib\" AppCore.lib Ultralight.lib UltralightCore.lib WebCore.lib sqlite3.lib libcurl.lib"
+                "-ExecutionPolicy", "Bypass",
+                "-File", "${workspaceFolder}\\.vscode\\build.ps1"
             ],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "problemMatcher": [
-                "$msCompile"
-            ],
+            "problemMatcher": "$msCompile",
             "group": {
                 "kind": "build",
                 "isDefault": true
             },
-            "detail": "Build AARcade Core application with all dependencies",
-            "dependsOn": ["Deploy Runtime Files"]
-        },
-        {
-            "type": "cppbuild",
-            "label": "C/C++: cl.exe build Ultralight app",
-            "command": "cmd.exe",
-            "args": [
-                "/c",
-                "\"F:\\Installed Programs\\Visual Studio Community 2022\\VC\\Auxiliary\\Build\\vcvarsall.bat\" x64 && cl.exe /Zi /EHsc /nologo /std:c++17 /I\"${workspaceFolder}\\include\" /Fe\"${workspaceFolder}\\x64\\Release\\${fileBasenameNoExtension}.exe\" \"${file}\" /link /MACHINE:X64 /LIBPATH:\"${workspaceFolder}\\lib\" AppCore.lib Ultralight.lib UltralightCore.lib WebCore.lib"
-            ],
-            "options": {
-                "cwd": "${fileDirname}"
-            },
-            "problemMatcher": [
-                "$msCompile"
-            ],
-            "group": {
-                "kind": "build",
-                "isDefault": false
-            },
-            "detail": "Build Ultralight application with MSVC"
-        },
-        {
-            "type": "cppbuild",
-            "label": "C/C++: cl.exe build active file",
-            "command": "cmd.exe",
-            "args": [
-                "/c",
-                "\"F:\\Installed Programs\\Visual Studio Community 2022\\VC\\Auxiliary\\Build\\vcvarsall.bat\" x64 && cl.exe /Zi /EHsc /nologo /std:c++17 /I\"${workspaceFolder}\\include\" /Fe\"${workspaceFolder}\\x64\\Release\\${fileBasenameNoExtension}.exe\" \"${file}\" /link /MACHINE:X64 /LIBPATH:\"${workspaceFolder}\\lib\" AppCore.lib Ultralight.lib UltralightCore.lib WebCore.lib"
-            ],
-            "options": {
-                "cwd": "${fileDirname}"
-            },
-            "problemMatcher": [
-                "$msCompile"
-            ],
-            "group": {
-                "kind": "build",
-                "isDefault": false
-            },
-            "detail": "Task generated by Debugger."
+            "dependsOn": ["Deploy Runtime Files"],
+            "detail": "Build AARcade Core with MSVC"
         }
     ],
     "version": "2.0.0"

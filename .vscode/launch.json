@@ -11,19 +11,7 @@
             "cwd": "${workspaceFolder}/x64/Release",
             "environment": [],
             "console": "integratedTerminal",
-            "preLaunchTask": "C/C++: Build AARcade Core"
-        },
-        {
-            "name": "Debug Current File",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/x64/Release/${fileBasenameNoExtension}.exe",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/x64/Release",
-            "environment": [],
-            "console": "integratedTerminal",
-            "preLaunchTask": "C/C++: cl.exe build Ultralight app"
+            "preLaunchTask": "Build AARcade Core"
         }
     ]
 }
