@@ -8,6 +8,8 @@
 #include <mutex>
 #include <memory>
 #include <algorithm>
+#include <map>
+#include <vector>
 #include <Ultralight/Ultralight.h>
 #include <AppCore/AppCore.h>
 
@@ -25,6 +27,7 @@ struct ImageLoadResult {
     int rectY;
     int rectWidth;
     int rectHeight;
+    std::function<void(const ImageLoadResult&)> callback;  // Store callback with result
 };
 
 /**
@@ -49,6 +52,7 @@ private:
     std::string cacheBasePath_;
     bool isInitialized_;
     bool isImageReady_;
+    bool isProcessing_;  // Track if currently processing a job
 
     std::string currentUrl_;
     std::function<void(const ImageLoadResult&)> currentCallback_;
@@ -62,10 +66,12 @@ private:
     // Queue for pending load requests
     struct LoadJob {
         std::string url;
-        std::function<void(const ImageLoadResult&)> callback;
+        std::string hash;  // CRC32 hash of the URL
+        std::vector<std::function<void(const ImageLoadResult&)>> callbacks;  // Multiple callbacks for same URL
     };
 
-    std::queue<LoadJob> jobQueue_;
+    std::queue<std::string> jobQueue_;  // Queue of hashes to process
+    std::map<std::string, LoadJob> jobMap_;  // Hash -> Job data
     std::queue<ImageLoadResult> completionQueue_;
     std::mutex queueMutex_;
     std::mutex completionMutex_;
@@ -183,38 +189,65 @@ private:
 
     // Process the next job in queue
     void processNextJob() {
+        std::string hash;
         LoadJob job;
 
         {
             std::lock_guard<std::mutex> lock(queueMutex_);
+
+            // Don't process if already processing a job
+            if (isProcessing_) {
+                debugOutput("Already processing a job, skipping");
+                return;
+            }
+
             if (jobQueue_.empty()) {
                 debugOutput("No more jobs in queue");
                 return;
             }
 
-            job = jobQueue_.front();
+            // Get next hash from queue
+            hash = jobQueue_.front();
             jobQueue_.pop();
+
+            // Look up job data
+            auto it = jobMap_.find(hash);
+            if (it == jobMap_.end()) {
+                debugOutput("ERROR: Hash not found in job map: " + hash);
+                return;
+            }
+
+            job = it->second;
+            isProcessing_ = true;  // Mark as processing
         }
 
-        debugOutput("Processing job for URL: " + job.url);
+        debugOutput("Processing job for URL: " + job.url + " (hash: " + job.hash + ")");
 
         // Check cache first
         std::string cachedPath = getCachedFilePath(job.url);
         if (!cachedPath.empty()) {
             debugOutput("Image already cached: " + cachedPath);
-            std::lock_guard<std::mutex> lock(completionMutex_);
-            // Note: Cached images have already been cropped, so rect is full size
-            // We could store rect info in cache metadata, but for now return 0,0,size,size
-            completionQueue_.push({ true, cachedPath, job.url, 0, 0, 0, 0 });
 
-            // Process next job
+            // Queue completions for all callbacks
+            {
+                std::lock_guard<std::mutex> lock(completionMutex_);
+                for (size_t i = 0; i < job.callbacks.size(); ++i) {
+                    completionQueue_.push({ true, cachedPath, job.url, 0, 0, 0, 0, job.callbacks[i] });
+                }
+            }
+
+            // Remove from job map
+            {
+                std::lock_guard<std::mutex> lock(queueMutex_);
+                jobMap_.erase(job.hash);
+                isProcessing_ = false;
+            }
             processNextJob();
             return;
         }
 
         // Not cached, need to load and render
         currentUrl_ = job.url;
-        currentCallback_ = job.callback;
         isImageReady_ = false;
 
         // Call JS to load the image
@@ -225,8 +258,30 @@ private:
     void loadImageInView(const std::string& url) {
         if (!view_ || !isInitialized_) {
             debugOutput("ERROR: View not initialized!");
-            std::lock_guard<std::mutex> lock(completionMutex_);
-            completionQueue_.push({ false, "", url, 0, 0, 0, 0 });
+
+            // Get hash and job data
+            std::string normalized = normalizeUrl(url);
+            std::string hash = calculateKodiHash(normalized);
+
+            LoadJob job;
+            {
+                std::lock_guard<std::mutex> lock(queueMutex_);
+                auto it = jobMap_.find(hash);
+                if (it != jobMap_.end()) {
+                    job = it->second;
+                    jobMap_.erase(it);
+                }
+                isProcessing_ = false;
+            }
+
+            // Queue failure for all callbacks
+            {
+                std::lock_guard<std::mutex> lock(completionMutex_);
+                for (size_t i = 0; i < job.callbacks.size(); ++i) {
+                    completionQueue_.push({ false, "", url, 0, 0, 0, 0, job.callbacks[i] });
+                }
+            }
+
             processNextJob();
             return;
         }
@@ -256,8 +311,30 @@ private:
             debugOutput("JS function called successfully");
         } else {
             debugOutput("ERROR: loadImageUrl function not found!");
-            std::lock_guard<std::mutex> lock(completionMutex_);
-            completionQueue_.push({ false, "", url, 0, 0, 0, 0 });
+
+            // Get hash and job data
+            std::string normalized = normalizeUrl(url);
+            std::string hash = calculateKodiHash(normalized);
+
+            LoadJob job;
+            {
+                std::lock_guard<std::mutex> lock(queueMutex_);
+                auto it = jobMap_.find(hash);
+                if (it != jobMap_.end()) {
+                    job = it->second;
+                    jobMap_.erase(it);
+                }
+                isProcessing_ = false;
+            }
+
+            // Queue failure for all callbacks
+            {
+                std::lock_guard<std::mutex> lock(completionMutex_);
+                for (size_t i = 0; i < job.callbacks.size(); ++i) {
+                    completionQueue_.push({ false, "", url, 0, 0, 0, 0, job.callbacks[i] });
+                }
+            }
+
             processNextJob();
         }
     }
@@ -319,20 +396,42 @@ private:
 
         debugOutput("Image rendered and saved: " + outputPath);
 
-        // Queue completion with rect info
+        // Get hash for current URL
+        std::string normalized = normalizeUrl(currentUrl_);
+        std::string hash = calculateKodiHash(normalized);
+
+        // Queue completion for all callbacks waiting for this image
+        LoadJob job;
         {
-            std::lock_guard<std::mutex> lock(completionMutex_);
-            completionQueue_.push({ true, outputPath, currentUrl_,
-                                   currentRectX_, currentRectY_, currentRectWidth_, currentRectHeight_ });
+            std::lock_guard<std::mutex> lock(queueMutex_);
+            auto it = jobMap_.find(hash);
+            if (it != jobMap_.end()) {
+                job = it->second;
+                jobMap_.erase(it);  // Remove from map
+            }
         }
 
-        // Process next job
+        {
+            std::lock_guard<std::mutex> lock(completionMutex_);
+            // Queue one completion for each callback
+            for (size_t i = 0; i < job.callbacks.size(); ++i) {
+                completionQueue_.push({ true, outputPath, currentUrl_,
+                                       currentRectX_, currentRectY_, currentRectWidth_, currentRectHeight_,
+                                       job.callbacks[i] });
+            }
+        }
+
+        // Mark as not processing and process next job
+        {
+            std::lock_guard<std::mutex> lock(queueMutex_);
+            isProcessing_ = false;
+        }
         processNextJob();
     }
 
 public:
     ImageLoader(RefPtr<Renderer> renderer, JSBridge* jsBridge)
-        : renderer_(renderer), jsBridge_(jsBridge), isInitialized_(false), isImageReady_(false),
+        : renderer_(renderer), jsBridge_(jsBridge), isInitialized_(false), isImageReady_(false), isProcessing_(false),
           currentRectX_(0), currentRectY_(0), currentRectWidth_(0), currentRectHeight_(0) {
 
         debugOutput("Initializing ImageLoader...");
@@ -384,14 +483,38 @@ public:
     void loadAndCacheImage(const std::string& url, std::function<void(const ImageLoadResult&)> callback) {
         debugOutput("Request to load image: " + url);
 
+        // Calculate hash for deduplication
+        std::string normalized = normalizeUrl(url);
+        std::string hash = calculateKodiHash(normalized);
+
         bool shouldProcess = false;
+        bool isNewJob = false;
         {
             std::lock_guard<std::mutex> lock(queueMutex_);
-            jobQueue_.push({ url, callback });
 
-            // If this is the first job and we're initialized, start processing
-            if (jobQueue_.size() == 1 && isInitialized_) {
-                shouldProcess = true;
+            // Check if this URL is already queued or being processed
+            auto it = jobMap_.find(hash);
+            if (it != jobMap_.end()) {
+                // URL already queued - just add callback
+                debugOutput("Image already queued, adding callback (hash: " + hash + ")");
+                it->second.callbacks.push_back(callback);
+            } else {
+                // New URL - create job entry
+                LoadJob job;
+                job.url = url;
+                job.hash = hash;
+                job.callbacks.push_back(callback);
+
+                jobMap_[hash] = job;
+                jobQueue_.push(hash);
+                isNewJob = true;
+
+                debugOutput("New image queued (hash: " + hash + ", queue size: " + std::to_string(jobQueue_.size()) + ")");
+
+                // If this is the first job and we're initialized, start processing
+                if (jobQueue_.size() == 1 && isInitialized_ && !isProcessing_) {
+                    shouldProcess = true;
+                }
             }
         }
 
@@ -422,8 +545,34 @@ public:
             renderAndSave();
         } else {
             debugOutput("Image load failed");
-            std::lock_guard<std::mutex> lock(completionMutex_);
-            completionQueue_.push({ false, "", url, 0, 0, 0, 0 });
+
+            // Get hash and job data
+            std::string normalized = normalizeUrl(url);
+            std::string hash = calculateKodiHash(normalized);
+
+            LoadJob job;
+            {
+                std::lock_guard<std::mutex> lock(queueMutex_);
+                auto it = jobMap_.find(hash);
+                if (it != jobMap_.end()) {
+                    job = it->second;
+                    jobMap_.erase(it);  // Remove from map
+                }
+            }
+
+            // Queue failure completion for all callbacks
+            {
+                std::lock_guard<std::mutex> lock(completionMutex_);
+                for (size_t i = 0; i < job.callbacks.size(); ++i) {
+                    completionQueue_.push({ false, "", url, 0, 0, 0, 0, job.callbacks[i] });
+                }
+            }
+
+            // Mark as not processing and process next job
+            {
+                std::lock_guard<std::mutex> lock(queueMutex_);
+                isProcessing_ = false;
+            }
             processNextJob();
         }
     }
@@ -454,11 +603,9 @@ public:
             ImageLoadResult result = completionQueue_.front();
             completionQueue_.pop();
 
-            // Find and call the callback
-            // Note: The callback is stored in currentCallback_ during processing
-            if (currentCallback_) {
-                currentCallback_(result);
-                currentCallback_ = nullptr;
+            // Call the callback stored in the result
+            if (result.callback) {
+                result.callback(result);
             }
         }
     }

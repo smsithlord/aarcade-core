@@ -5,12 +5,17 @@ class LibraryBrowser {
         this.currentQuery = null;
         this.hasMoreEntries = true;
         this.isLoading = false;
-        
+
         // Search state
         this.isSearchMode = false;
         this.currentSearchTerm = '';
         this.searchDebounceTimer = null;
-        
+
+        // Image cache state
+        // Map of url -> {status: 'pending'|'loading'|'cached'|'error', filePath: string, elements: Set<HTMLImageElement>}
+        this.imageCache = new Map();
+        this.placeholderImage = 'media-loading.jpg';
+
         this.initializeElements();
         this.bindEvents();
         this.updateStatus('Ready to load entries');
@@ -285,20 +290,20 @@ class LibraryBrowser {
         this.updateEntryCount();
     }
 
-    createEntryCard(entry, index) {
+    createEntryCard(entry) {
         const card = document.createElement('div');
         card.className = 'entry-card';
         card.addEventListener('click', () => this.showEntryDetail(entry));
-        
+
         // Determine the best image to use
         const imageUrl = this.getBestImage(entry);
-        const imageElement = imageUrl 
-            ? `<img src="${imageUrl}" alt="${entry.title || 'Entry'}" class="card-image" onerror="this.outerHTML='<div class=\\'card-image placeholder\\'>🖼️</div>'">`
+        const imageElement = imageUrl
+            ? `<img src="${this.placeholderImage}" data-url="${imageUrl}" alt="${entry.title || 'Entry'}" class="card-image loading">`
             : `<div class="card-image placeholder">🖼️</div>`;
-        
+
         // Create meta tags
         const metaTags = this.createMetaTags(entry);
-        
+
         card.innerHTML = `
             ${imageElement}
             <div class="card-content">
@@ -310,7 +315,15 @@ class LibraryBrowser {
                 </div>
             </div>
         `;
-        
+
+        // Trigger image loading if URL exists
+        if (imageUrl) {
+            const imgElement = card.querySelector('img[data-url]');
+            if (imgElement) {
+                this.loadImageWithCache(imageUrl, imgElement);
+            }
+        }
+
         return card;
     }
 
@@ -369,19 +382,103 @@ class LibraryBrowser {
         return tags.join('');
     }
 
+    loadImageWithCache(url, imgElement) {
+        // Check if already in cache
+        if (this.imageCache.has(url)) {
+            const cacheEntry = this.imageCache.get(url);
+
+            // Add element to tracking set
+            if (!cacheEntry.elements) {
+                cacheEntry.elements = new Set();
+            }
+            cacheEntry.elements.add(imgElement);
+
+            // Update based on current status
+            if (cacheEntry.status === 'cached') {
+                this.updateImageElement(imgElement, cacheEntry.filePath, 'loaded');
+            } else if (cacheEntry.status === 'error') {
+                this.updateImageElement(imgElement, null, 'error');
+            }
+            // If 'loading', just wait for completion
+
+            return;
+        }
+
+        // Create new cache entry
+        const cacheEntry = {
+            status: 'loading',
+            filePath: null,
+            elements: new Set([imgElement])
+        };
+        this.imageCache.set(url, cacheEntry);
+
+        // Start loading through arcadeHud
+        if (typeof arcadeHud === 'undefined' || !arcadeHud.loadImage) {
+            console.error('arcadeHud.loadImage not available, falling back to direct URL');
+            this.updateImageElement(imgElement, url, 'error');
+            cacheEntry.status = 'error';
+            return;
+        }
+
+        arcadeHud.loadImage(url)
+            .then(result => {
+                cacheEntry.status = 'cached';
+                cacheEntry.filePath = result.filePath;
+
+                // Update all elements waiting for this image
+                if (cacheEntry.elements) {
+                    cacheEntry.elements.forEach(el => {
+                        this.updateImageElement(el, result.filePath, 'loaded');
+                    });
+                }
+            })
+            .catch(error => {
+                console.error(`Failed to load image ${url}:`, error);
+                cacheEntry.status = 'error';
+
+                // Update all elements waiting for this image
+                if (cacheEntry.elements) {
+                    cacheEntry.elements.forEach(el => {
+                        this.updateImageElement(el, null, 'error');
+                    });
+                }
+            });
+    }
+
+    updateImageElement(imgElement, filePath, className) {
+        // Remove loading class
+        imgElement.classList.remove('loading');
+
+        if (className === 'loaded' && filePath) {
+            imgElement.src = filePath;
+            imgElement.classList.add('loaded');
+            imgElement.classList.remove('error');
+        } else if (className === 'error') {
+            // Show placeholder on error
+            imgElement.outerHTML = '<div class="card-image placeholder">🖼️</div>';
+        }
+    }
+
     showEntryDetail(entry) {
         this.elements.modalTitle.textContent = entry.title || 'Entry Details';
         this.elements.modalBody.innerHTML = this.createDetailView(entry);
         this.elements.modalOverlay.style.display = 'flex';
+
+        // Load image for detail view
+        const detailImg = this.elements.modalBody.querySelector('img[data-url]');
+        if (detailImg) {
+            const url = detailImg.getAttribute('data-url');
+            this.loadImageWithCache(url, detailImg);
+        }
     }
 
     createDetailView(entry) {
         let html = '';
-        
-        // Main image
+
+        // Main image - use placeholder and load from cache
         const imageUrl = this.getBestImage(entry);
         if (imageUrl) {
-            html += `<img src="${imageUrl}" alt="${entry.title || 'Entry'}" class="detail-image">`;
+            html += `<img src="${this.placeholderImage}" data-url="${imageUrl}" alt="${entry.title || 'Entry'}" class="detail-image loading">`;
         }
         
         // Basic information

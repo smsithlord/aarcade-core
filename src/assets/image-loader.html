@@ -46,20 +46,26 @@
     </div>
 
     <script>
-        // Image loader state
+        // Image loader state with queue support
         let currentUrl = '';
         let isLoading = false;
+        let imageQueue = [];
 
         const imageElement = document.getElementById('main-image');
 
-        // Called by C++ to load a new image
-        window.loadImageUrl = function(url) {
-            console.log('[ImageLoader] === TESTING v1.0 === Loading image: ' + url);
-
-            if (isLoading) {
-                console.warn('[ImageLoader] Already loading an image, request ignored');
+        // Process next image in queue
+        function processNextImage() {
+            if (isLoading || imageQueue.length === 0) {
                 return;
             }
+
+            const url = imageQueue.shift();
+            loadImage(url);
+        }
+
+        // Internal function to actually load an image
+        function loadImage(url) {
+            console.log('[ImageLoader] Loading image: ' + url);
 
             currentUrl = url;
             isLoading = true;
@@ -70,11 +76,8 @@
 
             // Set up event handlers
             imageElement.onload = function() {
-                console.log('[ImageLoader] === Image loaded successfully ===');
-                console.log('[ImageLoader] currentUrl = ' + currentUrl);
-                console.log('[ImageLoader] currentUrl type: ' + typeof currentUrl);
+                console.log('[ImageLoader] Image loaded successfully: ' + currentUrl);
                 imageElement.style.display = 'block';
-                isLoading = false;
 
                 // Calculate the actual rendered rect of the image
                 const rect = imageElement.getBoundingClientRect();
@@ -83,31 +86,20 @@
                 const rectWidth = Math.round(rect.width);
                 const rectHeight = Math.round(rect.height);
 
-                console.log('[ImageLoader] rectX = ' + rectX + ' (type: ' + typeof rectX + ')');
-                console.log('[ImageLoader] rectY = ' + rectY + ' (type: ' + typeof rectY + ')');
-                console.log('[ImageLoader] rectWidth = ' + rectWidth + ' (type: ' + typeof rectWidth + ')');
-                console.log('[ImageLoader] rectHeight = ' + rectHeight + ' (type: ' + typeof rectHeight + ')');
-
-                console.log('[ImageLoader] === About to call C++ with 6 args ===');
-                console.log('[ImageLoader] Arg 0 (success): true');
-                console.log('[ImageLoader] Arg 1 (url): ' + currentUrl);
-                console.log('[ImageLoader] Arg 2 (rectX): ' + rectX);
-                console.log('[ImageLoader] Arg 3 (rectY): ' + rectY);
-                console.log('[ImageLoader] Arg 4 (rectWidth): ' + rectWidth);
-                console.log('[ImageLoader] Arg 5 (rectHeight): ' + rectHeight);
-
                 // Notify C++ that image is ready to render with rect info
                 if (window.cppBridge && window.cppBridge.onImageLoaded) {
                     window.cppBridge.onImageLoaded(true, currentUrl, rectX, rectY, rectWidth, rectHeight);
-                    console.log('[ImageLoader] === C++ call completed ===');
                 } else {
                     console.error('[ImageLoader] C++ bridge not available!');
                 }
+
+                // Mark as complete and process next
+                isLoading = false;
+                processNextImage();
             };
 
             imageElement.onerror = function() {
                 console.error('[ImageLoader] Failed to load image:', currentUrl);
-                isLoading = false;
 
                 // Notify C++ of failure (with zero rect)
                 if (window.cppBridge && window.cppBridge.onImageLoaded) {
@@ -115,10 +107,21 @@
                 } else {
                     console.error('[ImageLoader] C++ bridge not available!');
                 }
+
+                // Mark as complete and process next
+                isLoading = false;
+                processNextImage();
             };
 
             // Start loading
             imageElement.src = url;
+        }
+
+        // Called by C++ to queue a new image
+        window.loadImageUrl = function(url) {
+            console.log('[ImageLoader] Queue request: ' + url);
+            imageQueue.push(url);
+            processNextImage();
         };
 
         // Initialize - call immediately since DOM is already loaded when this script runs
