@@ -11,14 +11,19 @@ library-small.db
 *.pdb
 *.ilk
 *.exp
-*.lib
-*.dll
 *.iobj
 *.ipdb
 release/
 debug/
 x64/
 x86/
+
+# Import libraries and DLLs (except those in lib/ for manual SDK dependencies)
+*.lib
+lib/*.dll
+
+# Exclude lib/ DLLs but allow them to be manually added if needed
+# Use 'git add -f lib/*.dll' to force-add SDK DLLs
 
 # Cache directories
 cache/
