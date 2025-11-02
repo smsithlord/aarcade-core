@@ -4,14 +4,15 @@ This document lists all runtime dependencies (DLLs) required for AARcade Core to
 
 ## Ultralight SDK DLLs
 
-These DLLs are manually copied from the Ultralight SDK to `lib/` directory:
+These DLLs are stored in `lib/` directory and tracked in source control:
 
 - **AppCore.dll** - Ultralight Application Core library
 - **Ultralight.dll** - Ultralight main rendering library
 - **UltralightCore.dll** - Ultralight core functionality
 - **WebCore.dll** - Web rendering engine
 
-**Source**: Manually copied from Ultralight SDK installation
+**Source**: Manually copied from Ultralight SDK installation to `lib/`
+**Location**: `lib/` (version controlled)
 **Deployment**: Copied from `lib/` to `x64/Release/` during build
 
 ## vcpkg Dependencies
@@ -28,9 +29,21 @@ These DLLs are provided by vcpkg packages:
 
 - **sqlite3.dll** - SQLite database engine
 
-**Source**: vcpkg package or manual installation
-**Location**: `vcpkg_installed/x64-windows/bin/sqlite3.dll` or manually placed in `lib/`
+**Source**: vcpkg package
+**Location**: `vcpkg_installed/x64-windows/bin/sqlite3.dll`
 **Deployment**: Copied to `x64/Release/` during build
+
+## Import Libraries
+
+The following `.lib` files are also stored in `lib/` and tracked in source control:
+
+- **AppCore.lib** - Ultralight import library
+- **Ultralight.lib** - Ultralight import library
+- **UltralightCore.lib** - Ultralight import library
+- **WebCore.lib** - Ultralight import library
+- **sqlite3.lib** - SQLite import library
+
+These are required for linking during compilation.
 
 ## Deployment Process
 

@@ -18,12 +18,13 @@ debug/
 x64/
 x86/
 
-# Import libraries and DLLs (except those in lib/ for manual SDK dependencies)
+# Import libraries (except in lib/ directory which contains SDK libraries)
 *.lib
-lib/*.dll
+!lib/*.lib
 
-# Exclude lib/ DLLs but allow them to be manually added if needed
-# Use 'git add -f lib/*.dll' to force-add SDK DLLs
+# DLLs are ignored everywhere except lib/ (for SDK DLLs)
+*.dll
+!lib/*.dll
 
 # Cache directories
 cache/
