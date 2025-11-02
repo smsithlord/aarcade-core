@@ -77,7 +77,7 @@ MainApp::MainApp() : library_(&dbManager_, &config_), jsBridge_(&dbManager_, &co
     ///
     /// Load a local HTML file into our overlay's View
     ///
-    std::string loadUrl = "file:///assets/library.html";
+    std::string loadUrl = "file:///assets/welcome.html";
     debugMsg = "[MainApp] Loading URL: " + loadUrl + "\n";
     OutputDebugStringA(debugMsg.c_str());
 

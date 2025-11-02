@@ -11,11 +11,43 @@
             margin: 0;
             padding: 0;
             min-height: 100vh;
+        }
+
+        .page-wrapper {
             display: flex;
             justify-content: center;
             align-items: center;
             padding: 20px;
             box-sizing: border-box;
+            min-height: calc(100vh - 40px);
+        }
+
+        .breadcrumbs {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 12px 20px;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.1);
+            font-size: 14px;
+        }
+
+        .breadcrumbs a {
+            color: #667eea;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .breadcrumbs a:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+
+        .breadcrumbs .separator {
+            margin: 0 8px;
+            color: #999;
+        }
+
+        .breadcrumbs .current {
+            color: #333;
+            font-weight: 600;
         }
         
         .container {
@@ -98,12 +130,7 @@
         }
         
         .debug-button:hover, .entry-button:hover, .utility-button:hover {
-            transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-        }
-        
-        .debug-button:active, .entry-button:active, .utility-button:active {
-            transform: translateY(0);
         }
         
         .debug-button:disabled, .entry-button:disabled, .utility-button:disabled {
@@ -217,12 +244,18 @@
         }
         
         .table-type-button:hover {
-            transform: translateY(-1px);
             box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
         }
     </style>
 </head>
 <body>
+    <nav class="breadcrumbs">
+        <a href="welcome.html">Home</a>
+        <span class="separator">/</span>
+        <span class="current">Database Tools</span>
+    </nav>
+
+    <div class="page-wrapper">
     <div class="container">
         <h1>🎮 Arcade Core</h1>
         <p class="subtitle">Multi-Table Database Browser & Debug Interface</p>
@@ -515,5 +548,7 @@
             }
         });
     </script>
+    </div>
+    </div>
 </body>
 </html>

@@ -1,0 +1,170 @@
+ARCADE CORE - LIBRARY FUNCTIONALITY ANALYSIS
+===============================================
+
+1. FILES CONTAINING LIBRARY CODE
+=================================
+
+Frontend:
+- src/assets/library.html       Main UI layout
+- src/assets/library.js          LibraryBrowser class (631 lines)
+- src/assets/style.css           CSS styling
+
+Backend:
+- aarcade_core/JSBridge.h        Interface (98 lines)
+- aarcade_core/JSBridge.cpp      Implementation (930 lines)
+- aarcade_core/MainApp.cpp       App initialization (141 lines)
+- aarcade_core/SQLiteManager.h   Database interface
+- aarcade_core/ImageLoader.h     Image caching (627 lines)
+
+
+2. LIBRARYBROWSER CLASS (library.js)
+====================================
+
+Key Methods:
+- loadEntries(isNewQuery) - Line 66
+- loadMoreEntries() - Line 127
+- performSearch(searchTerm) - Line 204
+- clearSearch() - Line 260
+- renderEntries() - Line 281
+- createEntryCard(entry) - Line 293
+- getBestImage(entry) - Line 330
+- createMetaTags(entry) - Line 357
+- loadImageWithCache(url, imgElement) - Line 385
+- updateImageElement() - Line 448
+- showEntryDetail(entry) - Line 462
+- createDetailView(entry) - Line 475
+- closeModal() - Line 579
+- updateStatus/updateEntryCount/showLoading/hideLoading - Lines 583-603
+- showError/hideError - Lines 611-617
+
+State Properties:
+- currentEntries[], filteredEntries[]
+- currentQuery, currentSearchTerm
+- isLoading, isSearchMode, hasMoreEntries
+- imageCache (Map for caching)
+- searchDebounceTimer
+
+
+3. JSBRIDGE (aarcade_core/JSBridge.cpp)
+=======================================
+
+Registered JS Methods (aapi object):
+
+Entry Browsing:
+- aapi.getFirstEntries(entryType, count) - Lines 693-737
+- aapi.getNextEntries(count) - Lines 739-763
+
+Search:
+- aapi.getFirstSearchResults(entryType, searchTerm, count) - Lines 765-824
+- aapi.getNextSearchResults(count) - Lines 645-665
+
+Images:
+- aapi.getCacheImage(url) - Lines 273-410
+  Returns promise-like object with then/catch support
+- aapi.processImageCompletions() - Lines 412-417
+
+Utilities:
+- aapi.getSupportedEntryTypes() - Lines 573-582
+
+Helper Functions:
+- createJSArray() - Lines 548-558
+- entryDataToJSObject() - Lines 516-546
+- arcadeKeyValuesToJSObject() - Lines 465-514
+
+
+4. IMAGELOADER (aarcade_core/ImageLoader.h)
+============================================
+
+Public Methods:
+- loadAndCacheImage(url, callback) - Line 483
+- onImageLoaded(success, url, rect...) - Line 528
+- onImageLoaderReady() - Line 581
+- processCompletions() - Line 599
+- setCacheDirectory(path) - Line 471
+- getView() - Line 478
+
+Features:
+- 512x512 offscreen view for rendering
+- Kodi-style CRC32 hash-based caching
+- Deduplication of identical URLs
+- Queue-based processing
+- Saves as PNG format
+
+Private Methods:
+- normalizeUrl(), calculateKodiHash()
+- getCacheFilePath(), getCachedFilePath()
+- processNextJob(), loadImageInView()
+- renderAndSave()
+
+
+5. MAINAPP (aarcade_core/MainApp.cpp)
+=====================================
+
+Initialization Sequence:
+1. Create JSBridge (Line 21)
+2. Load config (Line 16)
+3. Create App (Line 24)
+4. Pass renderer to JSBridge (Line 29)
+5. Create ImageLoader (Line 34)
+6. Set ImageLoader reference (Line 37)
+7. Set cache directory (Line 40)
+8. Initialize ConsoleLogger (Line 48)
+9. Create window 1280x720 (Line 54)
+10. Create overlay (Line 64)
+11. Register listeners (Lines 69-74)
+12. Load library.html (Line 79)
+
+
+6. SQLITEMANAGER (aarcade_core/SQLiteManager.h)
+================================================
+
+Supported Types: items, apps, instances, maps, models, platforms, types
+
+Key Methods:
+- getFirstEntries(type, count)
+- getNextEntries(count)
+- getFirstSearchResults(type, term, count)
+- getNextSearchResults(count)
+- getSupportedEntryTypes()
+- extractTitleFromKeyValues(hexData)
+- getTableNameForType(type)
+
+Returns: vector<pair<entryId, hexEncodedData>>
+
+
+7. PROPOSED LIBRARY CLASS
+==========================
+
+Create Library class to encapsulate:
+
+class Library {
+private:
+  SQLiteManager* dbManager_;
+  ImageLoader* imageLoader_;
+  
+public:
+  // Browsing
+  std::vector<EntryData> getFirstEntries(type, count);
+  std::vector<EntryData> getNextEntries(count);
+  
+  // Search
+  std::vector<EntryData> searchEntries(type, term, count);
+  std::vector<EntryData> getNextSearchResults(count);
+  
+  // Images
+  void cacheImage(url, callback);
+  
+  // Utilities
+  std::vector<std::string> getSupportedEntryTypes();
+};
+
+Files to Create/Modify:
+- Create: Library.h, Library.cpp
+- Modify: JSBridge.cpp/h
+- Modify: MainApp.cpp
+
+Benefits:
+- Separation of concerns
+- Better testability
+- Code reusability
+- Cleaner organization
