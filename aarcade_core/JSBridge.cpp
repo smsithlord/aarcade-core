@@ -123,8 +123,8 @@ JSValueRef onImageLoaderReadyCallback(JSContextRef ctx, JSObjectRef function, JS
     return JSValueMakeUndefined(ctx);
 }
 
-JSBridge::JSBridge(SQLiteManager* dbManager, ArcadeConfig* config)
-    : dbManager_(dbManager), config_(config), renderer_(nullptr), imageLoader_(nullptr) {
+JSBridge::JSBridge(SQLiteManager* dbManager, ArcadeConfig* config, Library* library)
+    : dbManager_(dbManager), config_(config), library_(library), renderer_(nullptr), imageLoader_(nullptr) {
     // Set this as the global instance
     setInstance(this);
 
@@ -349,13 +349,8 @@ JSValueRef JSBridge::getCacheImage(JSContextRef ctx, JSObjectRef function, JSObj
     // Protect the promise object from garbage collection
     JSValueProtect(ctx, promiseObj);
 
-    // Start the image loading process
-    if (!imageLoader_) {
-        OutputDebugStringA("[JSBridge] ERROR: ImageLoader not initialized!\n");
-        return JSValueMakeNull(ctx);
-    }
-
-    imageLoader_->loadAndCacheImage(url, [this, ctx, promiseObj](const ImageLoadResult& result) {
+    // Start the image loading process via Library
+    library_->cacheImage(url, [this, ctx, promiseObj](const ImageLoadResult& result) {
         if (result.success) {
             // Convert to file:// URL
             std::string fileUrl = convertToFileUrl(result.filePath);
@@ -411,8 +406,8 @@ JSValueRef JSBridge::getCacheImage(JSContextRef ctx, JSObjectRef function, JSObj
 
 JSValueRef JSBridge::processImageCompletions(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
     size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
-    // Process any pending completions from the worker thread
-    imageLoader_->processCompletions();
+    // Process any pending completions from the worker thread via Library
+    library_->processImageCompletions();
     return JSValueMakeUndefined(ctx);
 }
 
@@ -574,8 +569,8 @@ JSValueRef JSBridge::getSupportedEntryTypes(JSContextRef ctx, JSObjectRef functi
     size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
     OutputDebugStringA("[JSBridge] getSupportedEntryTypes called from JavaScript\n");
 
-    // Get supported types from SQLiteManager
-    std::vector<std::string> supportedTypes = dbManager_->getSupportedEntryTypes();
+    // Get supported types from Library
+    std::vector<std::string> supportedTypes = library_->getSupportedEntryTypes();
 
     // Convert to JavaScript array
     return createStringArray(ctx, supportedTypes);
@@ -604,42 +599,10 @@ JSValueRef JSBridge::getFirstEntry(JSContextRef ctx, JSObjectRef function, JSObj
     delete[] entryTypeBuffer;
     JSStringRelease(entryTypeStr);
 
-    // Get search term from second argument
-    JSStringRef searchTermStr = JSValueToStringCopy(ctx, arguments[1], exception);
-    if (!searchTermStr) {
-        OutputDebugStringA("[JSBridge] getFirstSearchResults: Invalid search term parameter\n");
-        return JSValueMakeNull(ctx);
-    }
+    // Get the first entry via Library
+    std::pair<std::string, std::string> entry = library_->getFirstEntry(entryType);
 
-    size_t searchTermLength = JSStringGetMaximumUTF8CStringSize(searchTermStr);
-    char* searchTermBuffer = new char[searchTermLength];
-    JSStringGetUTF8CString(searchTermStr, searchTermBuffer, searchTermLength);
-    std::string searchTerm(searchTermBuffer);
-    delete[] searchTermBuffer;
-    JSStringRelease(searchTermStr);
-
-    // Get count from third argument (optional, default to 50)
-    int count = 50;
-    if (argumentCount >= 3) {
-        double countDouble = JSValueToNumber(ctx, arguments[2], exception);
-        count = static_cast<int>(countDouble);
-        if (count <= 0 || count > 1000) {
-            count = 50; // Reset to default if invalid
-        }
-    }
-
-    OutputDebugStringA(("[JSBridge] getFirstSearchResults: Searching '" + entryType + "' for '" + searchTerm + "' (count: " + std::to_string(count) + ")\n").c_str());
-
-    // Open database if not already open
-    if (!dbManager_->openDatabase(config_->getDatabasePath())) {
-        OutputDebugStringA("[JSBridge] Failed to open database!\n");
-        return JSValueMakeNull(ctx);
-    }
-
-    // Get the first search results
-    std::vector<std::pair<std::string, std::string>> results = dbManager_->getFirstSearchResults(entryType, searchTerm, count);
-
-    return createJSArray(ctx, results);
+    return entryDataToJSObject(ctx, entry.first, entry.second);
 }
 
 JSValueRef JSBridge::getNextSearchResults(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
@@ -656,10 +619,8 @@ JSValueRef JSBridge::getNextSearchResults(JSContextRef ctx, JSObjectRef function
         }
     }
 
-    OutputDebugStringA(("[JSBridge] getNextSearchResults: Requesting " + std::to_string(count) + " more search results\n").c_str());
-
-    // Get the next search results
-    std::vector<std::pair<std::string, std::string>> results = dbManager_->getNextSearchResults(count);
+    // Get the next search results via Library
+    std::vector<std::pair<std::string, std::string>> results = library_->getNextSearchResults(count);
 
     return createJSArray(ctx, results);
 }
@@ -668,14 +629,8 @@ JSValueRef JSBridge::debugGetFirstItemAsJSObject(JSContextRef ctx, JSObjectRef f
     size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
     OutputDebugStringA("[JSBridge] debugGetFirstItemAsJSObject called from JavaScript (legacy method)\n");
 
-    // Open database if not already open
-    if (!dbManager_->openDatabase(config_->getDatabasePath())) {
-        OutputDebugStringA("[JSBridge] Failed to open database!\n");
-        return JSValueMakeNull(ctx);
-    }
-
-    // Get the first item from the database (legacy method)
-    std::pair<std::string, std::string> itemResult = dbManager_->getFirstItem();
+    // Get the first item from the database via Library (legacy method)
+    std::pair<std::string, std::string> itemResult = library_->getFirstItem();
 
     return entryDataToJSObject(ctx, itemResult.first, itemResult.second);
 }
@@ -684,8 +639,8 @@ JSValueRef JSBridge::getNextEntry(JSContextRef ctx, JSObjectRef function, JSObje
     size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
     OutputDebugStringA("[JSBridge] getNextEntry called from JavaScript\n");
 
-    // Get the next entry (no parameters needed)
-    std::pair<std::string, std::string> entry = dbManager_->getNextEntry();
+    // Get the next entry via Library (no parameters needed)
+    std::pair<std::string, std::string> entry = library_->getNextEntry();
 
     return entryDataToJSObject(ctx, entry.first, entry.second);
 }
@@ -722,16 +677,8 @@ JSValueRef JSBridge::getFirstEntries(JSContextRef ctx, JSObjectRef function, JSO
         return JSValueMakeNull(ctx);
     }
 
-    OutputDebugStringA(("[JSBridge] getFirstEntries: Requesting " + std::to_string(count) + " entries of type '" + entryType + "'\n").c_str());
-
-    // Open database if not already open
-    if (!dbManager_->openDatabase(config_->getDatabasePath())) {
-        OutputDebugStringA("[JSBridge] Failed to open database!\n");
-        return JSValueMakeNull(ctx);
-    }
-
-    // Get the first entries
-    std::vector<std::pair<std::string, std::string>> entries = dbManager_->getFirstEntries(entryType, count);
+    // Get the first entries via Library
+    std::vector<std::pair<std::string, std::string>> entries = library_->getFirstEntries(entryType, count);
 
     return createJSArray(ctx, entries);
 }
@@ -754,10 +701,8 @@ JSValueRef JSBridge::getNextEntries(JSContextRef ctx, JSObjectRef function, JSOb
         return JSValueMakeNull(ctx);
     }
 
-    OutputDebugStringA(("[JSBridge] getNextEntries: Requesting " + std::to_string(count) + " more entries\n").c_str());
-
-    // Get the next entries
-    std::vector<std::pair<std::string, std::string>> entries = dbManager_->getNextEntries(count);
+    // Get the next entries via Library
+    std::vector<std::pair<std::string, std::string>> entries = library_->getNextEntries(count);
 
     return createJSArray(ctx, entries);
 }
@@ -809,16 +754,8 @@ JSValueRef JSBridge::getFirstSearchResults(JSContextRef ctx, JSObjectRef functio
         }
     }
 
-    OutputDebugStringA(("[JSBridge] getFirstSearchResults: Searching '" + entryType + "' for '" + searchTerm + "' (count: " + std::to_string(count) + ")\n").c_str());
-
-    // Open database if not already open
-    if (!dbManager_->openDatabase(config_->getDatabasePath())) {
-        OutputDebugStringA("[JSBridge] Failed to open database!\n");
-        return JSValueMakeNull(ctx);
-    }
-
-    // Get the first search results
-    std::vector<std::pair<std::string, std::string>> results = dbManager_->getFirstSearchResults(entryType, searchTerm, count);
+    // Get the first search results via Library
+    std::vector<std::pair<std::string, std::string>> results = library_->getFirstSearchResults(entryType, searchTerm, count);
 
     return createJSArray(ctx, results);
 }

@@ -6,6 +6,7 @@
 #include <memory>
 #include "SQLiteManager.h"
 #include "Config.h"
+#include "Library.h"
 #include "JSBridge.h"
 #include "ImageLoader.h"
 #include "ConsoleLogger.h"
@@ -18,6 +19,7 @@ class MainApp : public WindowListener, public ViewListener, public LoadListener 
     RefPtr<Overlay> overlay_;
     SQLiteManager dbManager_;
     ArcadeConfig config_;
+    Library library_;
     JSBridge jsBridge_;
     std::unique_ptr<ImageLoader> imageLoader_;
     std::unique_ptr<ConsoleLogger> consoleLogger_;

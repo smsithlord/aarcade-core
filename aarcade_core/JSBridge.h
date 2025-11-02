@@ -9,6 +9,7 @@
 #include "Config.h"
 #include "ArcadeKeyValues.h"
 #include "ImageLoader.h"
+#include "Library.h"
 #include <memory>
 
 using namespace ultralight;
@@ -19,10 +20,11 @@ private:
     ArcadeConfig* config_;
     ImageLoader* imageLoader_; // Weak pointer, owned by MainApp
     RefPtr<Renderer> renderer_; // Store renderer for future use
+    Library* library_; // Library manager for arcade functionality
 
 public:
     // Constructor takes references to the managers it needs
-    JSBridge(SQLiteManager* dbManager, ArcadeConfig* config);
+    JSBridge(SQLiteManager* dbManager, ArcadeConfig* config, Library* library);
     virtual ~JSBridge();
 
     // Main entry point - called from MainApp::OnWindowObjectReady

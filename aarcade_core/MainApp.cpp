@@ -1,7 +1,7 @@
 #include "MainApp.h"
 #include <windows.h>
 
-MainApp::MainApp() : jsBridge_(&dbManager_, &config_) {
+MainApp::MainApp() : library_(&dbManager_, &config_), jsBridge_(&dbManager_, &config_, &library_) {
     ///
     /// Debug: Show current working directory
     ///
@@ -33,8 +33,9 @@ MainApp::MainApp() : jsBridge_(&dbManager_, &config_) {
     ///
     imageLoader_ = std::make_unique<ImageLoader>(app_->renderer(), &jsBridge_);
 
-    // Set the image loader reference in JSBridge
+    // Set the image loader reference in both JSBridge and Library
     jsBridge_.setImageLoader(imageLoader_.get());
+    library_.setImageLoader(imageLoader_.get());
 
     // Set cache directory
     imageLoader_->setCacheDirectory(".\\cache\\urls");
