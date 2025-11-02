@@ -51,7 +51,7 @@ MainApp::MainApp() : jsBridge_(&dbManager_, &config_) {
     ///
     /// Create our Window.
     ///
-    window_ = Window::Create(app_->main_monitor(), 900, 600, false, kWindowFlags_Titled);
+    window_ = Window::Create(app_->main_monitor(), 1280, 720, false, kWindowFlags_Titled);
 
     ///
     /// Set the title of our window.
