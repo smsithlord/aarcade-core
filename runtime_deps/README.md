@@ -15,6 +15,16 @@ These DLLs are stored in `lib/` directory and tracked in source control:
 **Location**: `lib/` (version controlled)
 **Deployment**: Copied from `lib/` to `x64/Release/` during build
 
+## Ultralight Resources
+
+Required resource files for Ultralight runtime:
+
+- **cacert.pem** - CA certificate bundle for HTTPS support
+- **icudt67l.dat** - ICU data file for Unicode support
+
+**Location**: `src/resources/` (version controlled)
+**Deployment**: Copied to `x64/Release/resources/` during build
+
 ## SQLite Database
 
 The project currently has no vcpkg dependencies, but SQLite support is available:
