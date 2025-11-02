@@ -1,0 +1,552 @@
+class LibraryBrowser {
+    constructor() {
+        this.currentEntries = [];
+        this.filteredEntries = [];
+        this.currentQuery = null;
+        this.hasMoreEntries = true;
+        this.isLoading = false;
+        
+        // Search state
+        this.isSearchMode = false;
+        this.currentSearchTerm = '';
+        this.searchDebounceTimer = null;
+        
+        this.initializeElements();
+        this.bindEvents();
+        this.updateStatus('Ready to load entries');
+    }
+
+    initializeElements() {
+        this.elements = {
+            entryType: document.getElementById('entryType'),
+            pageSize: document.getElementById('pageSize'),
+            loadBtn: document.getElementById('loadBtn'),
+            loadMoreBtn: document.getElementById('loadMoreBtn'),
+            searchBox: document.getElementById('searchBox'),
+            statusText: document.getElementById('statusText'),
+            entryCount: document.getElementById('entryCount'),
+            libraryGrid: document.getElementById('libraryGrid'),
+            loadingIndicator: document.getElementById('loadingIndicator'),
+            errorMessage: document.getElementById('errorMessage'),
+            modalOverlay: document.getElementById('modalOverlay'),
+            modalTitle: document.getElementById('modalTitle'),
+            modalBody: document.getElementById('modalBody'),
+            modalClose: document.getElementById('modalClose')
+        };
+    }
+
+    bindEvents() {
+        this.elements.loadBtn.addEventListener('click', () => this.loadEntries(true));
+        this.elements.loadMoreBtn.addEventListener('click', () => this.loadMoreEntries());
+        this.elements.searchBox.addEventListener('input', (e) => this.handleSearchInput(e.target.value));
+        this.elements.modalClose.addEventListener('click', () => this.closeModal());
+        this.elements.modalOverlay.addEventListener('click', (e) => {
+            if (e.target === this.elements.modalOverlay) {
+                this.closeModal();
+            }
+        });
+        
+        // Clear search when entry type changes
+        this.elements.entryType.addEventListener('change', () => this.clearSearch());
+        this.elements.pageSize.addEventListener('change', () => this.clearSearch());
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.closeModal();
+            }
+        });
+    }
+
+    async loadEntries(isNewQuery = true) {
+        if (this.isLoading) return;
+        
+        this.isLoading = true;
+        this.showLoading();
+        this.hideError();
+        
+        try {
+            const entryType = this.elements.entryType.value;
+            const pageSize = parseInt(this.elements.pageSize.value);
+            
+            let newEntries;
+            
+            if (isNewQuery) {
+                // Reset state for new query
+                this.currentEntries = [];
+                this.currentQuery = entryType;
+                this.hasMoreEntries = true;
+                this.isSearchMode = false;
+                this.elements.libraryGrid.innerHTML = '';
+                
+                // Get first batch
+                newEntries = aapi.getFirstEntries(entryType, pageSize);
+                this.updateStatus(`Loading ${entryType}...`);
+            } else {
+                // This should not be called for new browsing - use loadMoreEntries instead
+                return;
+            }
+            
+            if (newEntries && newEntries.length > 0) {
+                this.currentEntries.push(...newEntries);
+                this.filteredEntries = [...this.currentEntries]; // No client-side filtering in browse mode
+                this.renderEntries();
+                
+                this.updateStatus(`Loaded ${this.currentEntries.length} ${entryType} entries`);
+                this.elements.loadMoreBtn.style.display = 'inline-block';
+                this.elements.loadMoreBtn.textContent = 'Load More';
+                this.elements.loadMoreBtn.disabled = false;
+                
+                // Check if we got less than requested (might be end of data)
+                if (newEntries.length < pageSize) {
+                    this.hasMoreEntries = false;
+                    this.elements.loadMoreBtn.textContent = 'No more entries';
+                    this.elements.loadMoreBtn.disabled = true;
+                }
+            } else {
+                this.hasMoreEntries = false;
+                this.elements.loadMoreBtn.style.display = 'none';
+                this.updateStatus(`No ${entryType} entries found`);
+            }
+            
+        } catch (error) {
+            console.error('Error loading entries:', error);
+            this.showError(`Failed to load ${this.elements.entryType.value} entries: ${error.message}`);
+        } finally {
+            this.isLoading = false;
+            this.hideLoading();
+            this.updateEntryCount();
+        }
+    }
+
+    async loadMoreEntries() {
+        if (this.isLoading) return;
+        
+        this.isLoading = true;
+        this.showLoading();
+        
+        try {
+            const pageSize = parseInt(this.elements.pageSize.value);
+            let newEntries;
+            
+            if (this.isSearchMode) {
+                // Load more search results
+                newEntries = aapi.getNextSearchResults(pageSize);
+                this.updateStatus(`Loading more search results for "${this.currentSearchTerm}"...`);
+            } else {
+                // Load more browse results
+                newEntries = aapi.getNextEntries(pageSize);
+                this.updateStatus(`Loading more ${this.currentQuery} entries...`);
+            }
+            
+            if (newEntries && newEntries.length > 0) {
+                this.currentEntries.push(...newEntries);
+                this.filteredEntries = [...this.currentEntries];
+                this.renderEntries();
+                
+                if (this.isSearchMode) {
+                    this.updateStatus(`Found ${this.currentEntries.length} results for "${this.currentSearchTerm}"`);
+                } else {
+                    this.updateStatus(`Loaded ${this.currentEntries.length} ${this.currentQuery} entries`);
+                }
+                
+                // Check if we got less than requested (might be end of data)
+                if (newEntries.length < pageSize) {
+                    this.hasMoreEntries = false;
+                    this.elements.loadMoreBtn.textContent = 'No more entries';
+                    this.elements.loadMoreBtn.disabled = true;
+                }
+            } else {
+                this.hasMoreEntries = false;
+                this.elements.loadMoreBtn.textContent = 'No more entries';
+                this.elements.loadMoreBtn.disabled = true;
+                
+                if (this.isSearchMode) {
+                    this.updateStatus(`All search results loaded for "${this.currentSearchTerm}" (${this.currentEntries.length} total)`);
+                } else {
+                    this.updateStatus(`All ${this.currentQuery} entries loaded (${this.currentEntries.length} total)`);
+                }
+            }
+            
+        } catch (error) {
+            console.error('Error loading more entries:', error);
+            this.showError('Failed to load more entries: ' + error.message);
+        } finally {
+            this.isLoading = false;
+            this.hideLoading();
+            this.updateEntryCount();
+        }
+    }
+
+    handleSearchInput(searchTerm) {
+        // Clear any existing debounce timer
+        if (this.searchDebounceTimer) {
+            clearTimeout(this.searchDebounceTimer);
+        }
+        
+        // If search is empty, switch back to browse mode
+        if (!searchTerm.trim()) {
+            this.clearSearch();
+            return;
+        }
+        
+        // Debounce the search to avoid excessive API calls
+        this.searchDebounceTimer = setTimeout(() => {
+            this.performSearch(searchTerm.trim());
+        }, 300); // 300ms delay
+    }
+
+    async performSearch(searchTerm) {
+        if (this.isLoading) return;
+        
+        this.isLoading = true;
+        this.showLoading();
+        this.hideError();
+        
+        try {
+            const entryType = this.elements.entryType.value;
+            const pageSize = parseInt(this.elements.pageSize.value);
+            
+            // Start new search
+            this.currentEntries = [];
+            this.isSearchMode = true;
+            this.currentSearchTerm = searchTerm;
+            this.currentQuery = entryType;
+            this.hasMoreEntries = true;
+            this.elements.libraryGrid.innerHTML = '';
+            
+            this.updateStatus(`Searching ${entryType} for "${searchTerm}"...`);
+            
+            // Get first search results
+            const searchResults = aapi.getFirstSearchResults(entryType, searchTerm, pageSize);
+            
+            if (searchResults && searchResults.length > 0) {
+                this.currentEntries.push(...searchResults);
+                this.filteredEntries = [...this.currentEntries];
+                this.renderEntries();
+                
+                this.updateStatus(`Found ${this.currentEntries.length} results for "${searchTerm}"`);
+                this.elements.loadMoreBtn.style.display = 'inline-block';
+                this.elements.loadMoreBtn.textContent = 'Load More Results';
+                this.elements.loadMoreBtn.disabled = false;
+                
+                // Check if we got less than requested (might be end of search results)
+                if (searchResults.length < pageSize) {
+                    this.hasMoreEntries = false;
+                    this.elements.loadMoreBtn.textContent = 'No more results';
+                    this.elements.loadMoreBtn.disabled = true;
+                }
+            } else {
+                this.hasMoreEntries = false;
+                this.elements.loadMoreBtn.style.display = 'none';
+                this.updateStatus(`No results found for "${searchTerm}"`);
+            }
+            
+        } catch (error) {
+            console.error('Error performing search:', error);
+            this.showError(`Search failed: ${error.message}`);
+        } finally {
+            this.isLoading = false;
+            this.hideLoading();
+            this.updateEntryCount();
+        }
+    }
+
+    clearSearch() {
+        // Clear search input and reset to browse mode
+        this.elements.searchBox.value = '';
+        this.currentSearchTerm = '';
+        this.isSearchMode = false;
+        
+        // Clear debounce timer
+        if (this.searchDebounceTimer) {
+            clearTimeout(this.searchDebounceTimer);
+            this.searchDebounceTimer = null;
+        }
+        
+        // Reset display
+        this.currentEntries = [];
+        this.filteredEntries = [];
+        this.elements.libraryGrid.innerHTML = '';
+        this.elements.loadMoreBtn.style.display = 'none';
+        this.updateStatus('Ready to load entries');
+        this.updateEntryCount();
+    }
+
+    renderEntries() {
+        this.elements.libraryGrid.innerHTML = '';
+        
+        this.filteredEntries.forEach((entry, index) => {
+            const card = this.createEntryCard(entry, index);
+            this.elements.libraryGrid.appendChild(card);
+        });
+        
+        // Update entry count after rendering
+        this.updateEntryCount();
+    }
+
+    createEntryCard(entry, index) {
+        const card = document.createElement('div');
+        card.className = 'entry-card';
+        card.addEventListener('click', () => this.showEntryDetail(entry));
+        
+        // Determine the best image to use
+        const imageUrl = this.getBestImage(entry);
+        const imageElement = imageUrl 
+            ? `<img src="${imageUrl}" alt="${entry.title || 'Entry'}" class="card-image" onerror="this.outerHTML='<div class=\\'card-image placeholder\\'>🖼️</div>'">`
+            : `<div class="card-image placeholder">🖼️</div>`;
+        
+        // Create meta tags
+        const metaTags = this.createMetaTags(entry);
+        
+        card.innerHTML = `
+            ${imageElement}
+            <div class="card-content">
+                <div class="card-id">${entry.info?.id?.slice(-8) || 'No ID'}</div>
+                <h3 class="card-title">${this.escapeHtml(entry.title || 'Untitled')}</h3>
+                ${entry.description ? `<p class="card-description">${this.escapeHtml(entry.description)}</p>` : ''}
+                <div class="card-meta">
+                    ${metaTags}
+                </div>
+            </div>
+        `;
+        
+        return card;
+    }
+
+    getBestImage(entry) {
+        // Priority order for images
+        const imageFields = ['marquee', 'screen', 'file'];
+        
+        for (const field of imageFields) {
+            if (entry[field] && this.isImageUrl(entry[field])) {
+                return entry[field];
+            }
+        }
+        
+        return null;
+    }
+
+    isImageUrl(url) {
+        if (!url || typeof url !== 'string') return false;
+        
+        // Check if URL has image extension
+        const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
+        const urlLower = url.toLowerCase();
+        
+        return imageExtensions.some(ext => urlLower.includes(ext)) ||
+               urlLower.includes('image') ||
+               urlLower.includes('screenshot') ||
+               urlLower.includes('preview') ||
+               urlLower.includes('thumb');
+    }
+
+    createMetaTags(entry) {
+        const tags = [];
+        
+        // Add created date if available
+        if (entry.info?.created) {
+            const date = new Date(parseInt(entry.info.created) * 1000);
+            tags.push(`<span class="meta-tag">📅 ${date.getFullYear()}</span>`);
+        }
+        
+        // Add owner if available
+        if (entry.info?.owner && entry.info.owner !== 'local') {
+            tags.push(`<span class="meta-tag">👤 ${entry.info.owner}</span>`);
+        }
+        
+        // Add file type based on content
+        if (entry.reference && entry.reference.includes('steam')) {
+            tags.push(`<span class="meta-tag">🎮 Steam</span>`);
+        } else if (entry.stream || entry.file?.includes('twitch')) {
+            tags.push(`<span class="meta-tag">📺 Stream</span>`);
+        } else if (entry.file?.includes('youtube') || entry.preview?.includes('youtube')) {
+            tags.push(`<span class="meta-tag">📹 Video</span>`);
+        } else if (this.isImageUrl(entry.file)) {
+            tags.push(`<span class="meta-tag">🖼️ Image</span>`);
+        }
+        
+        return tags.join('');
+    }
+
+    showEntryDetail(entry) {
+        this.elements.modalTitle.textContent = entry.title || 'Entry Details';
+        this.elements.modalBody.innerHTML = this.createDetailView(entry);
+        this.elements.modalOverlay.style.display = 'flex';
+    }
+
+    createDetailView(entry) {
+        let html = '';
+        
+        // Main image
+        const imageUrl = this.getBestImage(entry);
+        if (imageUrl) {
+            html += `<img src="${imageUrl}" alt="${entry.title || 'Entry'}" class="detail-image">`;
+        }
+        
+        // Basic information
+        html += `<div class="detail-section">
+            <h4>Basic Information</h4>
+            <div class="detail-grid">`;
+        
+        if (entry.title) {
+            html += `<div class="detail-label">Title:</div>
+                     <div class="detail-value">${this.escapeHtml(entry.title)}</div>`;
+        }
+        
+        if (entry.description) {
+            html += `<div class="detail-label">Description:</div>
+                     <div class="detail-value">${this.escapeHtml(entry.description)}</div>`;
+        }
+        
+        if (entry.keywords) {
+            html += `<div class="detail-label">Keywords:</div>
+                     <div class="detail-value">${this.escapeHtml(entry.keywords)}</div>`;
+        }
+        
+        html += `</div></div>`;
+        
+        // Links and files
+        const linkFields = ['file', 'reference', 'preview', 'stream'];
+        const hasLinks = linkFields.some(field => entry[field]);
+        
+        if (hasLinks) {
+            html += `<div class="detail-section">
+                <h4>Links & Files</h4>
+                <div class="detail-grid">`;
+            
+            linkFields.forEach(field => {
+                if (entry[field]) {
+                    html += `<div class="detail-label">${this.capitalizeFirst(field)}:</div>
+                             <div class="detail-value"><a href="${entry[field]}" target="_blank">${entry[field]}</a></div>`;
+                }
+            });
+            
+            html += `</div></div>`;
+        }
+        
+        // Metadata
+        if (entry.info) {
+            html += `<div class="detail-section">
+                <h4>Metadata</h4>
+                <div class="detail-grid">`;
+            
+            Object.entries(entry.info).forEach(([key, value]) => {
+                let displayValue = value;
+                if (key === 'created' || key === 'modified') {
+                    displayValue = new Date(parseInt(value) * 1000).toLocaleString();
+                }
+                html += `<div class="detail-label">${this.capitalizeFirst(key)}:</div>
+                         <div class="detail-value">${this.escapeHtml(displayValue)}</div>`;
+            });
+            
+            html += `</div></div>`;
+        }
+        
+        // Local data
+        if (entry.local) {
+            html += `<div class="detail-section">
+                <h4>Local Data</h4>
+                <div class="detail-grid">`;
+            
+            this.renderNestedObject(entry.local, html);
+            
+            html += `</div></div>`;
+        }
+        
+        // Raw data
+        html += `<div class="detail-section">
+            <h4>Raw Data</h4>
+            <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px;">${JSON.stringify(entry, null, 2)}</pre>
+        </div>`;
+        
+        return html;
+    }
+
+    renderNestedObject(obj, html) {
+        Object.entries(obj).forEach(([key, value]) => {
+            if (typeof value === 'object' && value !== null) {
+                html += `<div class="detail-label">${this.capitalizeFirst(key)}:</div>
+                         <div class="detail-value">${JSON.stringify(value, null, 2)}</div>`;
+            } else {
+                let displayValue = value;
+                if (key === 'modified' || key === 'created') {
+                    displayValue = new Date(parseInt(value) * 1000).toLocaleString();
+                }
+                html += `<div class="detail-label">${this.capitalizeFirst(key)}:</div>
+                         <div class="detail-value">${this.escapeHtml(displayValue)}</div>`;
+            }
+        });
+    }
+
+    closeModal() {
+        this.elements.modalOverlay.style.display = 'none';
+    }
+
+    updateStatus(message) {
+        this.elements.statusText.textContent = message;
+    }
+
+    updateEntryCount() {
+        const total = this.currentEntries.length;
+        
+        if (this.isSearchMode) {
+            this.elements.entryCount.textContent = `${total} search results`;
+        } else {
+            this.elements.entryCount.textContent = `${total} entries`;
+        }
+    }
+
+    showLoading() {
+        this.elements.loadingIndicator.style.display = 'flex';
+        this.elements.loadBtn.disabled = true;
+        this.elements.loadMoreBtn.disabled = true;
+    }
+
+    hideLoading() {
+        this.elements.loadingIndicator.style.display = 'none';
+        this.elements.loadBtn.disabled = false;
+        if (this.hasMoreEntries) {
+            this.elements.loadMoreBtn.disabled = false;
+        }
+    }
+
+    showError(message) {
+        this.elements.errorMessage.textContent = message;
+        this.elements.errorMessage.style.display = 'block';
+        this.updateStatus('Error occurred');
+    }
+
+    hideError() {
+        this.elements.errorMessage.style.display = 'none';
+    }
+
+    // Utility functions
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    capitalizeFirst(str) {
+        return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+}
+
+// Initialize the library browser when the page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Check if the aapi object is available
+    if (typeof aapi === 'undefined') {
+        console.error('aapi object not found. Make sure the C++ bridge is properly initialized.');
+        document.getElementById('statusText').textContent = '❌ API not available';
+        return;
+    }
+
+    // Initialize the library browser
+    const libraryBrowser = new LibraryBrowser();
+    
+    // Make it available globally for debugging
+    window.libraryBrowser = libraryBrowser;
+    
+    console.log('Library browser initialized successfully');
+});

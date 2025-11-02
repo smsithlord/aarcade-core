@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arcade Core - Database Browser</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            min-width: 700px;
+            max-width: 900px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        
+        .button-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            background: #f9f9f9;
+        }
+        
+        .section-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 14px;
+        }
+        
+        .debug-button {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(238, 90, 36, 0.3);
+            margin: 5px;
+        }
+        
+        .entry-button {
+            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(68, 160, 141, 0.3);
+            margin: 5px;
+        }
+        
+        .utility-button {
+            background: linear-gradient(45deg, #9b59b6, #8e44ad);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(142, 68, 173, 0.3);
+            margin: 5px;
+        }
+        
+        .debug-button:hover, .entry-button:hover, .utility-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        .debug-button:active, .entry-button:active, .utility-button:active {
+            transform: translateY(0);
+        }
+        
+        .debug-button:disabled, .entry-button:disabled, .utility-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .type-selector {
+            padding: 8px;
+            margin: 0 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            font-size: 14px;
+        }
+        
+        .count-input {
+            width: 60px;
+            padding: 8px;
+            margin: 0 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-align: center;
+        }
+        
+        .current-query {
+            background: #e8f4fd;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #2196f3;
+            font-size: 13px;
+            color: #1565c0;
+        }
+        
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+            min-height: 20px;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status.running {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        
+        textarea {
+            width: 100%;
+            height: 300px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background: #f8f9fa;
+            resize: vertical;
+            display: none;
+            box-sizing: border-box;
+        }
+        
+        .info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 4px solid #2196f3;
+        }
+        
+        .info p {
+            margin: 5px 0;
+            color: #1565c0;
+            font-size: 14px;
+        }
+        
+        .table-types {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        
+        .table-type-button {
+            background: linear-gradient(45deg, #f39c12, #e67e22);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            font-size: 12px;
+            font-weight: bold;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .table-type-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 Arcade Core</h1>
+        <p class="subtitle">Multi-Table Database Browser & Debug Interface</p>
+        
+        <div class="button-section">
+            <div class="section-title">🔧 Debug & Utility Functions</div>
+            <button id="debugButton" class="debug-button" onclick="runSQLiteDebugTest()">
+                Run Database Analysis
+            </button>
+            
+            <button class="utility-button" onclick="getSupportedTypes()">
+                Get Supported Types
+            </button>
+            
+            <button id="legacyButton" class="debug-button" onclick="getFirstItemAsJSObject()">
+                Get First Item (Legacy)
+            </button>
+        </div>
+        
+        <div class="button-section">
+            <div class="section-title">📦 Entry Browsing (Single)</div>
+            <div style="margin-bottom: 10px;">
+                <select id="singleEntryType" class="type-selector">
+                    <option value="items">items</option>
+                    <option value="apps">apps</option>
+                    <option value="instances">instances</option>
+                    <option value="maps">maps</option>
+                    <option value="models">models</option>
+                    <option value="platforms">platforms</option>
+                    <option value="types">types</option>
+                </select>
+                <button class="entry-button" onclick="getFirstEntry()">
+                    Get First Entry
+                </button>
+                <button class="entry-button" onclick="getNextEntry()">
+                    Get Next Entry
+                </button>
+            </div>
+            <div id="currentQuery" class="current-query" style="display: none;">
+                No active query
+            </div>
+        </div>
+        
+        <div class="button-section">
+            <div class="section-title">📋 Entry Browsing (Batch)</div>
+            <div style="margin-bottom: 10px;">
+                <select id="batchEntryType" class="type-selector">
+                    <option value="items">items</option>
+                    <option value="apps">apps</option>
+                    <option value="instances">instances</option>
+                    <option value="maps">maps</option>
+                    <option value="models">models</option>
+                    <option value="platforms">platforms</option>
+                    <option value="types">types</option>
+                </select>
+                <button class="entry-button" onclick="getFirstEntries()">
+                    Get First
+                </button>
+                <input type="number" id="firstCount" class="count-input" value="5" min="1" max="50">
+                <span>Entries</span>
+            </div>
+            
+            <div>
+                <button class="entry-button" onclick="getNextEntries()">
+                    Get Next
+                </button>
+                <input type="number" id="nextCount" class="count-input" value="5" min="1" max="50">
+                <span>Entries</span>
+            </div>
+        </div>
+        
+        <div class="button-section">
+            <div class="section-title">🚀 Quick Access - Browse by Table Type</div>
+            <div class="table-types">
+                <button class="table-type-button" onclick="browseTableType('items')">Items</button>
+                <button class="table-type-button" onclick="browseTableType('apps')">Apps</button>
+                <button class="table-type-button" onclick="browseTableType('instances')">Instances</button>
+                <button class="table-type-button" onclick="browseTableType('maps')">Maps</button>
+                <button class="table-type-button" onclick="browseTableType('models')">Models</button>
+                <button class="table-type-button" onclick="browseTableType('platforms')">Platforms</button>
+                <button class="table-type-button" onclick="browseTableType('types')">Types</button>
+            </div>
+        </div>
+        
+        <div id="status" class="status"></div>
+        
+        <textarea id="outputArea" placeholder="Entry data will appear here..."></textarea>
+        
+        <div class="info">
+            <p><strong>📋 Available Functions:</strong></p>
+            <p>• <strong>Database Analysis:</strong> Shows database structure and info</p>
+            <p>• <strong>Multi-Table Support:</strong> Browse all 7 table types (items, apps, instances, maps, models, platforms, types)</p>
+            <p>• <strong>Single Mode:</strong> Get one entry at a time (First → Next → Next...)</p>
+            <p>• <strong>Batch Mode:</strong> Get multiple entries at once (configurable count)</p>
+            <p>• <strong>Quick Access:</strong> Direct buttons for each table type</p>
+            <p>• <strong>Type Discovery:</strong> Get list of all supported entry types</p>
+            <p>• All debug output goes to Visual Studio Debug Console</p>
+        </div>
+    </div>
+
+    <script>
+        let currentQueryType = null;
+        
+        function updateCurrentQuery(type) {
+            currentQueryType = type;
+            const queryDiv = document.getElementById('currentQuery');
+            if (type) {
+                queryDiv.textContent = `Active query: ${type}`;
+                queryDiv.style.display = 'block';
+            } else {
+                queryDiv.style.display = 'none';
+            }
+        }
+        
+        function showOutput(data, message) {
+            const status = document.getElementById('status');
+            const outputArea = document.getElementById('outputArea');
+            
+            if (data && data !== null) {
+                status.className = 'status success';
+                status.textContent = message || '✅ Data retrieved successfully!';
+                
+                outputArea.style.display = 'block';
+                if (Array.isArray(data)) {
+                    outputArea.value = JSON.stringify(data, null, 2);
+                } else {
+                    outputArea.value = JSON.stringify(data, null, 2);
+                }
+            } else {
+                status.className = 'status error';
+                status.textContent = '❌ No data found or failed to retrieve.';
+                outputArea.style.display = 'none';
+            }
+        }
+        
+        function showError(message) {
+            const status = document.getElementById('status');
+            const outputArea = document.getElementById('outputArea');
+            
+            status.className = 'status error';
+            status.textContent = message;
+            outputArea.style.display = 'none';
+        }
+        
+        function showRunning(message) {
+            const status = document.getElementById('status');
+            status.className = 'status running';
+            status.textContent = message;
+        }
+        
+        // Utility functions
+        function getSupportedTypes() {
+            showRunning('🔄 Getting supported entry types...');
+            
+            try {
+                const types = aapi.getSupportedEntryTypes();
+                showOutput(types, '✅ Supported entry types retrieved!');
+                console.log('Supported types:', types);
+            } catch (error) {
+                showError('❌ Error getting supported types: ' + error.message);
+                console.error('getSupportedTypes error:', error);
+            }
+        }
+        
+        // Quick access functions
+        function browseTableType(type) {
+            showRunning(`🔄 Getting first 3 ${type} entries...`);
+            updateCurrentQuery(type);
+            
+            try {
+                const entries = aapi.getFirstEntries(type, 3);
+                showOutput(entries, `✅ First ${entries.length} ${type} entries retrieved!`);
+                console.log(`First ${entries.length} ${type} entries:`, entries);
+            } catch (error) {
+                showError(`❌ Error getting ${type} entries: ` + error.message);
+                console.error(`browseTableType(${type}) error:`, error);
+            }
+        }
+        
+        // Entry browsing functions
+        function getFirstEntry() {
+            const entryType = document.getElementById('singleEntryType').value;
+            showRunning(`🔄 Getting first ${entryType} entry...`);
+            updateCurrentQuery(entryType);
+            
+            try {
+                const entry = aapi.getFirstEntry(entryType);
+                showOutput(entry, `✅ First ${entryType} entry retrieved!`);
+                console.log(`First ${entryType} entry:`, entry);
+            } catch (error) {
+                showError(`❌ Error getting first ${entryType} entry: ` + error.message);
+                console.error('getFirstEntry error:', error);
+            }
+        }
+        
+        function getNextEntry() {
+            showRunning('🔄 Getting next entry...');
+            
+            try {
+                const entry = aapi.getNextEntry();
+                if (entry && Object.keys(entry).length > 0) {
+                    showOutput(entry, '✅ Next entry retrieved!');
+                    console.log('Next entry:', entry);
+                } else {
+                    showError('❌ No more entries available.');
+                    updateCurrentQuery(null);
+                }
+            } catch (error) {
+                showError('❌ Error getting next entry: ' + error.message);
+                console.error('getNextEntry error:', error);
+            }
+        }
+        
+        function getFirstEntries() {
+            const entryType = document.getElementById('batchEntryType').value;
+            const count = parseInt(document.getElementById('firstCount').value) || 5;
+            showRunning(`🔄 Getting first ${count} ${entryType} entries...`);
+            updateCurrentQuery(entryType);
+            
+            try {
+                const entries = aapi.getFirstEntries(entryType, count);
+                showOutput(entries, `✅ First ${entries.length} ${entryType} entries retrieved!`);
+                console.log(`First ${entries.length} ${entryType} entries:`, entries);
+            } catch (error) {
+                showError(`❌ Error getting first ${entryType} entries: ` + error.message);
+                console.error('getFirstEntries error:', error);
+            }
+        }
+        
+        function getNextEntries() {
+            const count = parseInt(document.getElementById('nextCount').value) || 5;
+            showRunning(`🔄 Getting next ${count} entries...`);
+            
+            try {
+                const entries = aapi.getNextEntries(count);
+                if (entries && entries.length > 0) {
+                    showOutput(entries, `✅ Next ${entries.length} entries retrieved!`);
+                    console.log(`Next ${entries.length} entries:`, entries);
+                } else {
+                    showError('❌ No more entries available.');
+                    updateCurrentQuery(null);
+                }
+            } catch (error) {
+                showError('❌ Error getting next entries: ' + error.message);
+                console.error('getNextEntries error:', error);
+            }
+        }
+        
+        // Legacy functions
+        function getFirstItemAsJSObject() {
+            showRunning('🔄 Getting first item (legacy)...');
+            
+            try {
+                const itemData = aapi.debugGetFirstItemAsJSObject();
+                showOutput(itemData, '✅ Legacy first item retrieved!');
+                console.log('Legacy item:', itemData);
+            } catch (error) {
+                showError('❌ Error getting legacy item: ' + error.message);
+                console.error('Legacy item error:', error);
+            }
+        }
+        
+        function runSQLiteDebugTest() {
+            showRunning('🔄 Running database analysis...');
+            
+            try {
+                const success = aapi.debugTesterJoint();
+                
+                if (success) {
+                    document.getElementById('status').className = 'status success';
+                    document.getElementById('status').textContent = '✅ Database analysis completed! Check Debug Output.';
+                } else {
+                    document.getElementById('status').className = 'status error';  
+                    document.getElementById('status').textContent = '❌ Database analysis failed! Check Debug Output.';
+                }
+                
+                document.getElementById('outputArea').style.display = 'none';
+            } catch (error) {
+                showError('❌ Error running analysis: ' + error.message);
+                console.error('Debug test error:', error);
+            }
+        }
+        
+        // Show initial ready status
+        window.addEventListener('load', function() {
+            console.log("Multi-table database browser loaded");
+            const status = document.getElementById('status');
+            if (status) {
+                status.textContent = '🟢 Ready to browse all database tables';
+            }
+        });
+    </script>
+</body>
+</html>

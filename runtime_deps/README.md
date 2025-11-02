@@ -15,23 +15,15 @@ These DLLs are stored in `lib/` directory and tracked in source control:
 **Location**: `lib/` (version controlled)
 **Deployment**: Copied from `lib/` to `x64/Release/` during build
 
-## vcpkg Dependencies
-
-These DLLs are provided by vcpkg packages:
-
-- **libcurl.dll** - HTTP/network library
-- **zlib1.dll** - Compression library
-
-**Source**: `vcpkg_installed/x64-windows/bin/`
-**Deployment**: Copied during build process
-
 ## SQLite Database
 
-- **sqlite3.dll** - SQLite database engine
+The project currently has no vcpkg dependencies, but SQLite support is available:
 
-**Source**: vcpkg package
-**Location**: `vcpkg_installed/x64-windows/bin/sqlite3.dll`
-**Deployment**: Copied to `x64/Release/` during build
+- **sqlite3.dll** - SQLite database engine (optional, for future use)
+- **sqlite3.lib** - SQLite import library
+
+**Source**: Can be installed via vcpkg if needed
+**Note**: Currently not required for the core application
 
 ## Import Libraries
 
