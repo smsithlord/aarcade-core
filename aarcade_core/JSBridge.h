@@ -88,6 +88,10 @@ public:
     JSValueRef getSupportedEntryTypes(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
         size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 
+    // Schema construction
+    JSValueRef constructSchema(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+        size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
+
     // Application control methods
     JSValueRef quitApplication(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
         size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
@@ -132,6 +136,9 @@ JSValueRef getCacheImageCallback(JSContextRef ctx, JSObjectRef function, JSObjec
     size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 
 JSValueRef getSupportedEntryTypesCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
+
+JSValueRef constructSchemaCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
     size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 
 JSValueRef onImageLoadedCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,

@@ -105,6 +105,15 @@ JSValueRef getSupportedEntryTypesCallback(JSContextRef ctx, JSObjectRef function
     return JSValueMakeNull(ctx);
 }
 
+JSValueRef constructSchemaCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    JSBridge* bridge = JSBridge::getInstance();
+    if (bridge) {
+        return bridge->constructSchema(ctx, function, thisObject, argumentCount, arguments, exception);
+    }
+    return JSValueMakeNull(ctx);
+}
+
 JSValueRef onImageLoadedCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
     size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
     JSBridge* bridge = JSBridge::getInstance();
@@ -246,6 +255,12 @@ void JSBridge::setupJavaScriptBridge(View* view, uint64_t frame_id, bool is_main
     JSObjectSetProperty(ctx, aapiObj, methodName, methodFunc, 0, 0);
     JSStringRelease(methodName);
 
+    // Register schema construction
+    methodName = JSStringCreateWithUTF8CString("constructSchema");
+    methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, constructSchemaCallback);
+    JSObjectSetProperty(ctx, aapiObj, methodName, methodFunc, 0, 0);
+    JSStringRelease(methodName);
+
     // Register application control methods
     methodName = JSStringCreateWithUTF8CString("quitApplication");
     methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, quitApplicationCallback);
@@ -270,6 +285,7 @@ void JSBridge::setupJavaScriptBridge(View* view, uint64_t frame_id, bool is_main
     OutputDebugStringA("[JSBridge]   - aapi.getCacheImage\n");
     OutputDebugStringA("[JSBridge]   - aapi.processImageCompletions\n");
     OutputDebugStringA("[JSBridge]   - aapi.getSupportedEntryTypes\n");
+    OutputDebugStringA("[JSBridge]   - aapi.constructSchema\n");
 }
 
 // Helper function to convert Windows path to file:// URL
@@ -592,6 +608,36 @@ JSValueRef JSBridge::getSupportedEntryTypes(JSContextRef ctx, JSObjectRef functi
 
     // Convert to JavaScript array
     return createStringArray(ctx, supportedTypes);
+}
+
+JSValueRef JSBridge::constructSchema(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    OutputDebugStringA("[JSBridge] constructSchema called from JavaScript\n");
+
+    if (argumentCount < 1) {
+        OutputDebugStringA("[JSBridge] constructSchema: Missing entryType parameter\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    // Get entry type from first argument
+    JSStringRef entryTypeStr = JSValueToStringCopy(ctx, arguments[0], exception);
+    if (!entryTypeStr) {
+        OutputDebugStringA("[JSBridge] constructSchema: Invalid entry type parameter\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    size_t entryTypeLength = JSStringGetMaximumUTF8CStringSize(entryTypeStr);
+    char* entryTypeBuffer = new char[entryTypeLength];
+    JSStringGetUTF8CString(entryTypeStr, entryTypeBuffer, entryTypeLength);
+    std::string entryType = entryTypeBuffer;
+    delete[] entryTypeBuffer;
+    JSStringRelease(entryTypeStr);
+
+    // Get schema from Library
+    std::vector<std::string> schema = library_->constructSchema(entryType);
+
+    // Convert to JavaScript array
+    return createStringArray(ctx, schema);
 }
 
 JSValueRef JSBridge::quitApplication(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,

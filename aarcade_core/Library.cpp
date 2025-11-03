@@ -1,5 +1,7 @@
 #include "Library.h"
 #include <windows.h>
+#include <set>
+#include <algorithm>
 
 Library::Library(SQLiteManager* dbManager, ArcadeConfig* config)
     : dbManager_(dbManager), config_(config), imageLoader_(nullptr) {
@@ -133,6 +135,71 @@ void Library::processImageCompletions() {
     if (imageLoader_) {
         imageLoader_->processCompletions();
     }
+}
+
+std::vector<std::string> Library::constructSchema(const std::string& entryType) {
+    OutputDebugStringA(("[Library] constructSchema: Constructing schema for '" + entryType + "'\n").c_str());
+
+    std::vector<std::string> schema;
+    std::set<std::string> fieldSet; // Use set to track unique fields
+
+    // Open database if not already open
+    if (!openDatabase()) {
+        OutputDebugStringA("[Library] constructSchema: Failed to open database\n");
+        return schema;
+    }
+
+    // Get all entries for this type
+    std::vector<std::pair<std::string, std::string>> allEntries = dbManager_->getFirstEntries(entryType, 10000);
+
+    OutputDebugStringA(("[Library] constructSchema: Analyzing " + std::to_string(allEntries.size()) + " entries\n").c_str());
+
+    // Iterate through all entries and collect field names
+    for (const auto& entry : allEntries) {
+        if (entry.second.empty()) {
+            continue;
+        }
+
+        // Parse the hex data
+        auto kvData = ArcadeKeyValues::ParseFromHex(entry.second);
+        if (!kvData) {
+            continue;
+        }
+
+        // Navigate to the actual data section
+        // Structure is: root -> "item"/"app"/etc -> fields
+        ArcadeKeyValues* tableSection = kvData->GetFirstSubKey();
+        if (!tableSection) {
+            continue;
+        }
+
+        // Check if there's a "local" subsection (for items table compatibility)
+        ArcadeKeyValues* dataSection = tableSection->FindKey("local");
+        if (!dataSection) {
+            // If no local section, use the table section itself
+            dataSection = tableSection;
+        }
+
+        // Get all child keys (fields) from the data section
+        ArcadeKeyValues* field = dataSection->GetFirstSubKey();
+        while (field != nullptr) {
+            std::string fieldName = field->GetName();
+            if (!fieldName.empty()) {
+                fieldSet.insert(fieldName);
+            }
+            field = field->GetNextKey();
+        }
+    }
+
+    // Convert set to vector for return
+    schema.assign(fieldSet.begin(), fieldSet.end());
+
+    // Sort alphabetically for consistency
+    std::sort(schema.begin(), schema.end());
+
+    OutputDebugStringA(("[Library] constructSchema: Found " + std::to_string(schema.size()) + " unique fields\n").c_str());
+
+    return schema;
 }
 
 std::pair<std::string, std::string> Library::getFirstItem() {

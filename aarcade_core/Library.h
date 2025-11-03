@@ -54,6 +54,9 @@ public:
     std::vector<std::string> getSupportedEntryTypes() const;
     bool openDatabase();
 
+    // Schema construction
+    std::vector<std::string> constructSchema(const std::string& entryType);
+
     // Legacy method for backwards compatibility
     std::pair<std::string, std::string> getFirstItem();
 };

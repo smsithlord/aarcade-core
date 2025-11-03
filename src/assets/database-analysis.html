@@ -252,7 +252,7 @@
     <nav class="breadcrumbs">
         <a href="welcome.html">Home</a>
         <span class="separator">/</span>
-        <span class="current">Database Tools</span>
+        <span class="current">Database Analysis</span>
     </nav>
 
     <div class="page-wrapper">
@@ -339,7 +339,31 @@
                 <button class="table-type-button" onclick="browseTableType('types')">Types</button>
             </div>
         </div>
-        
+
+        <div class="button-section">
+            <div class="section-title">🔍 Schema Construction</div>
+            <div style="margin-bottom: 10px;">
+                <select id="schemaEntryType" class="type-selector">
+                    <option value="items">items</option>
+                    <option value="apps">apps</option>
+                    <option value="instances">instances</option>
+                    <option value="maps">maps</option>
+                    <option value="models">models</option>
+                    <option value="platforms">platforms</option>
+                    <option value="types">types</option>
+                </select>
+                <button class="utility-button" onclick="constructTableSchema()">
+                    Construct Schema
+                </button>
+            </div>
+            <div class="info" style="background: #fff3cd; border-left-color: #ffc107; margin-top: 10px;">
+                <p style="color: #856404; font-size: 13px;">
+                    Analyzes all entries in the selected table to discover available fields.
+                    This scans the entire table to find all unique field names.
+                </p>
+            </div>
+        </div>
+
         <div id="status" class="status"></div>
         
         <textarea id="outputArea" placeholder="Entry data will appear here..."></textarea>
@@ -347,6 +371,7 @@
         <div class="info">
             <p><strong>📋 Available Functions:</strong></p>
             <p>• <strong>Database Analysis:</strong> Shows database structure and info</p>
+            <p>• <strong>Schema Construction:</strong> Discovers all field names available in a table type</p>
             <p>• <strong>Multi-Table Support:</strong> Browse all 7 table types (items, apps, instances, maps, models, platforms, types)</p>
             <p>• <strong>Single Mode:</strong> Get one entry at a time (First → Next → Next...)</p>
             <p>• <strong>Batch Mode:</strong> Get multiple entries at once (configurable count)</p>
@@ -504,10 +529,29 @@
             }
         }
         
+        // Schema construction function
+        function constructTableSchema() {
+            const entryType = document.getElementById('schemaEntryType').value;
+            showRunning(`🔄 Constructing schema for ${entryType}...`);
+
+            try {
+                const schema = aapi.constructSchema(entryType);
+                if (schema && schema.length > 0) {
+                    showOutput(schema, `✅ Found ${schema.length} unique fields in ${entryType}!`);
+                    console.log(`Schema for ${entryType}:`, schema);
+                } else {
+                    showError(`❌ No fields found for ${entryType}.`);
+                }
+            } catch (error) {
+                showError('❌ Error constructing schema: ' + error.message);
+                console.error('constructSchema error:', error);
+            }
+        }
+
         // Legacy functions
         function getFirstItemAsJSObject() {
             showRunning('🔄 Getting first item (legacy)...');
-            
+
             try {
                 const itemData = aapi.debugGetFirstItemAsJSObject();
                 showOutput(itemData, '✅ Legacy first item retrieved!');
