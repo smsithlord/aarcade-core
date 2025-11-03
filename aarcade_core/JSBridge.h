@@ -109,6 +109,15 @@ public:
     JSValueRef dbtCompactDatabase(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
         size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 
+    JSValueRef dbtFindAnomalousInstances(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+        size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
+
+    JSValueRef dbtGetInstanceKeyValues(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+        size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
+
+    JSValueRef dbtRemoveAnomalousKeys(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+        size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
+
     // Helper functions
     JSObjectRef arcadeKeyValuesToJSObject(JSContextRef ctx, const ArcadeKeyValues* kv);
     JSObjectRef entryDataToJSObject(JSContextRef ctx, const std::string& entryId, const std::string& hexData);

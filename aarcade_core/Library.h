@@ -9,6 +9,7 @@
 #include <string>
 #include <utility>
 #include <functional>
+#include <set>
 
 /**
  * Library class - Manages the arcade library functionality
@@ -27,6 +28,9 @@ private:
     SQLiteManager* dbManager_;
     ArcadeConfig* config_;
     ImageLoader* imageLoader_;
+
+    // Helper method for recursive schema construction
+    void collectFieldPathsRecursive(ArcadeKeyValues* node, const std::string& currentPath, std::set<std::string>& fieldSet, bool isInstanceData, int depth);
 
 public:
     // Constructor - takes references to required managers
@@ -96,6 +100,31 @@ public:
     DatabaseStats dbtGetDatabaseStats();
     CompactResult dbtCompactDatabase();
 
+    // Anomalous instances detection
+    struct AnomalousInstanceEntry {
+        std::string id;
+        std::vector<std::string> unexpectedKeys;
+        int keyCount;
+        int generation;
+        int legacy;
+    };
+
+    std::vector<AnomalousInstanceEntry> dbtFindAnomalousInstances();
+    std::string dbtGetInstanceKeyValues(const std::string& instanceId);
+
+    struct RemoveKeysResult {
+        std::string id;
+        bool success;
+        std::string error;
+    };
+
+    std::vector<RemoveKeysResult> dbtRemoveAnomalousKeys(const std::vector<std::string>& instanceIds);
+
+private:
+    // Helper function for converting KeyValues to plain text
+    std::string keyValuesToPlainText(ArcadeKeyValues* kv, int indent);
+
+public:
     // Legacy method for backwards compatibility
     std::pair<std::string, std::string> getFirstItem();
 };

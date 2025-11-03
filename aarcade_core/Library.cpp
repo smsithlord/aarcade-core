@@ -137,11 +137,77 @@ void Library::processImageCompletions() {
     }
 }
 
+// Helper function to recursively collect field paths
+void Library::collectFieldPathsRecursive(ArcadeKeyValues* node, const std::string& currentPath, std::set<std::string>& fieldSet, bool isInstanceData, int depth) {
+    if (!node) return;
+
+    ArcadeKeyValues* child = node->GetFirstSubKey();
+    while (child != nullptr) {
+        std::string fieldName = child->GetName();
+        if (!fieldName.empty()) {
+            // Build the full path for this field
+            std::string fullPath = currentPath.empty() ? fieldName : currentPath + "." + fieldName;
+
+            // Special handling for instances table
+            if (isInstanceData) {
+                // Check if we're entering the "objects" section (root level)
+                if (fieldName == "objects" && currentPath.empty()) {
+                    // This is the "objects" field at the root level
+                    fieldSet.insert(fullPath);
+
+                    // Inside objects, we have object IDs - handle them specially
+                    ArcadeKeyValues* objectChild = child->GetFirstSubKey();
+                    while (objectChild != nullptr) {
+                        // Don't add the object ID itself, but process its children with placeholder
+                        if (objectChild->GetFirstSubKey() != nullptr) {
+                            collectFieldPathsRecursive(objectChild, fullPath + ".[object_id]", fieldSet, isInstanceData, depth + 1);
+                        }
+                        objectChild = objectChild->GetNextKey();
+                    }
+                }
+                // Check if we're entering the "materials" section (under overrides)
+                else if (fieldName == "materials" && currentPath == "overrides") {
+                    // This is the "materials" field under "overrides"
+                    fieldSet.insert(fullPath);
+
+                    // Inside materials, we have material IDs - handle them specially
+                    ArcadeKeyValues* materialChild = child->GetFirstSubKey();
+                    while (materialChild != nullptr) {
+                        // Don't add the material ID itself, but process its children with placeholder
+                        if (materialChild->GetFirstSubKey() != nullptr) {
+                            collectFieldPathsRecursive(materialChild, fullPath + ".[material_id]", fieldSet, isInstanceData, depth + 1);
+                        }
+                        materialChild = materialChild->GetNextKey();
+                    }
+                }
+                else {
+                    // Normal field - add it and recurse
+                    fieldSet.insert(fullPath);
+
+                    // Recursively process nested objects
+                    if (child->GetFirstSubKey() != nullptr) {
+                        collectFieldPathsRecursive(child, fullPath, fieldSet, isInstanceData, depth + 1);
+                    }
+                }
+            } else {
+                // Normal field - add it and recurse
+                fieldSet.insert(fullPath);
+
+                // Recursively process nested objects
+                if (child->GetFirstSubKey() != nullptr) {
+                    collectFieldPathsRecursive(child, fullPath, fieldSet, isInstanceData, depth + 1);
+                }
+            }
+        }
+        child = child->GetNextKey();
+    }
+}
+
 std::vector<std::string> Library::constructSchema(const std::string& entryType) {
     OutputDebugStringA(("[Library] constructSchema: Constructing schema for '" + entryType + "'\n").c_str());
 
     std::vector<std::string> schema;
-    std::set<std::string> fieldSet; // Use set to track unique fields
+    std::set<std::string> fieldSet; // Use set to track unique fields with paths
 
     // Open database if not already open
     if (!openDatabase()) {
@@ -154,7 +220,7 @@ std::vector<std::string> Library::constructSchema(const std::string& entryType) 
 
     OutputDebugStringA(("[Library] constructSchema: Analyzing " + std::to_string(allEntries.size()) + " entries\n").c_str());
 
-    // Iterate through all entries and collect field names
+    // Iterate through all entries and collect field names with paths
     for (const auto& entry : allEntries) {
         if (entry.second.empty()) {
             continue;
@@ -180,15 +246,11 @@ std::vector<std::string> Library::constructSchema(const std::string& entryType) 
             dataSection = tableSection;
         }
 
-        // Get all child keys (fields) from the data section
-        ArcadeKeyValues* field = dataSection->GetFirstSubKey();
-        while (field != nullptr) {
-            std::string fieldName = field->GetName();
-            if (!fieldName.empty()) {
-                fieldSet.insert(fieldName);
-            }
-            field = field->GetNextKey();
-        }
+        // Determine if this is an instances table (for special "objects" handling)
+        bool isInstanceData = (entryType == "instances");
+
+        // Recursively collect all field paths
+        collectFieldPathsRecursive(dataSection, "", fieldSet, isInstanceData, 0);
     }
 
     // Convert set to vector for return
@@ -449,4 +511,257 @@ std::pair<std::string, std::string> Library::getFirstItem() {
     }
 
     return dbManager_->getFirstItem();
+}
+
+// Helper function to convert KeyValues to plain text format
+std::string Library::keyValuesToPlainText(ArcadeKeyValues* kv, int indent) {
+    if (!kv) {
+        return "";
+    }
+
+    std::string result;
+    std::string indentStr(indent * 2, ' '); // 2 spaces per indent level
+
+    // Get the name of this key
+    const char* name = kv->GetName();
+    if (name && name[0] != '\0') {
+        result += indentStr + name;
+    }
+
+    // Check if this node has a value (leaf node)
+    const char* value = kv->GetString(nullptr, nullptr);
+    if (value && value[0] != '\0') {
+        result += ": \"" + std::string(value) + "\"\n";
+    } else {
+        // This is a parent node with children
+        if (name && name[0] != '\0') {
+            result += "\n";
+        }
+
+        // Iterate through all children
+        ArcadeKeyValues* child = kv->GetFirstSubKey();
+        while (child) {
+            result += keyValuesToPlainText(child, indent + 1);
+            child = child->GetNextKey();
+        }
+    }
+
+    return result;
+}
+
+std::vector<Library::AnomalousInstanceEntry> Library::dbtFindAnomalousInstances() {
+    OutputDebugStringA("[Library] dbtFindAnomalousInstances: Searching for instances with unexpected root keys\n");
+
+    std::vector<AnomalousInstanceEntry> results;
+
+    // Open database if not already open
+    if (!openDatabase()) {
+        OutputDebugStringA("[Library] dbtFindAnomalousInstances: Failed to open database\n");
+        return results;
+    }
+
+    // Get all instances (up to 10000)
+    std::vector<std::pair<std::string, std::string>> allInstances = dbManager_->getFirstEntries("instances", 10000);
+
+    OutputDebugStringA(("[Library] dbtFindAnomalousInstances: Analyzing " + std::to_string(allInstances.size()) + " instances\n").c_str());
+
+    // Expected keys at the root of an instance
+    std::set<std::string> expectedKeys = { "generation", "info", "objects", "overrides", "legacy" };
+
+    // Iterate through all instances
+    for (const auto& instance : allInstances) {
+        if (instance.second.empty()) {
+            continue;
+        }
+
+        const std::string& id = instance.first;
+
+        // Parse the hex data
+        auto kvData = ArcadeKeyValues::ParseFromHex(instance.second);
+        if (!kvData) {
+            continue;
+        }
+
+        // Navigate to the instance section (root -> "instance")
+        ArcadeKeyValues* instanceSection = kvData->GetFirstSubKey();
+        if (!instanceSection) {
+            continue;
+        }
+
+        // Collect all keys at the root level
+        std::vector<std::string> unexpectedKeys;
+        ArcadeKeyValues* child = instanceSection->GetFirstSubKey();
+        while (child) {
+            const char* keyName = child->GetName();
+            if (keyName && keyName[0] != '\0') {
+                std::string key(keyName);
+                // Check if this key is not in the expected set
+                if (expectedKeys.find(key) == expectedKeys.end()) {
+                    unexpectedKeys.push_back(key);
+                }
+            }
+            child = child->GetNextKey();
+        }
+
+        // If we found any unexpected keys, add to results
+        if (!unexpectedKeys.empty()) {
+            AnomalousInstanceEntry entry;
+            entry.id = id;
+            entry.unexpectedKeys = unexpectedKeys;
+            entry.keyCount = static_cast<int>(unexpectedKeys.size());
+
+            // Extract generation value (integer)
+            ArcadeKeyValues* generationKey = instanceSection->FindKey("generation");
+            if (generationKey) {
+                entry.generation = generationKey->GetInt(nullptr, 0);
+            } else {
+                entry.generation = 0;
+            }
+
+            // Extract legacy value (integer)
+            ArcadeKeyValues* legacyKey = instanceSection->FindKey("legacy");
+            if (legacyKey) {
+                entry.legacy = legacyKey->GetInt(nullptr, 0);
+            } else {
+                entry.legacy = 0;
+            }
+
+            results.push_back(entry);
+        }
+    }
+
+    OutputDebugStringA(("[Library] dbtFindAnomalousInstances: Found " + std::to_string(results.size()) + " anomalous instances\n").c_str());
+
+    return results;
+}
+
+std::string Library::dbtGetInstanceKeyValues(const std::string& instanceId) {
+    OutputDebugStringA(("[Library] dbtGetInstanceKeyValues: Fetching KeyValues for instance " + instanceId + "\n").c_str());
+
+    // Open database if not already open
+    if (!openDatabase()) {
+        OutputDebugStringA("[Library] dbtGetInstanceKeyValues: Failed to open database\n");
+        return "Error: Failed to open database";
+    }
+
+    // Fetch the instance data by ID
+    std::pair<std::string, std::string> instanceData = dbManager_->getEntryById("instances", instanceId);
+
+    if (instanceData.second.empty()) {
+        OutputDebugStringA("[Library] dbtGetInstanceKeyValues: Instance not found\n");
+        return "Error: Instance not found";
+    }
+
+    // Parse the hex data
+    auto kvData = ArcadeKeyValues::ParseFromHex(instanceData.second);
+    if (!kvData) {
+        OutputDebugStringA("[Library] dbtGetInstanceKeyValues: Failed to parse KeyValues\n");
+        return "Error: Failed to parse KeyValues data";
+    }
+
+    // Convert to plain text format
+    std::string plainText = keyValuesToPlainText(kvData.get(), 0);
+
+    OutputDebugStringA(("[Library] dbtGetInstanceKeyValues: Successfully converted to plain text (" + std::to_string(plainText.length()) + " chars)\n").c_str());
+
+    return plainText;
+}
+
+std::vector<Library::RemoveKeysResult> Library::dbtRemoveAnomalousKeys(const std::vector<std::string>& instanceIds) {
+    OutputDebugStringA(("[Library] dbtRemoveAnomalousKeys: Removing anomalous keys from " + std::to_string(instanceIds.size()) + " instances\n").c_str());
+
+    std::vector<RemoveKeysResult> results;
+
+    // Open database if not already open
+    if (!openDatabase()) {
+        OutputDebugStringA("[Library] dbtRemoveAnomalousKeys: Failed to open database\n");
+        // Return failure for all instances
+        for (const auto& id : instanceIds) {
+            results.push_back({ id, false, "Database not available" });
+        }
+        return results;
+    }
+
+    // Expected keys at the root of an instance
+    std::set<std::string> expectedKeys = { "generation", "info", "objects", "overrides", "legacy" };
+
+    // Process each instance
+    for (const auto& id : instanceIds) {
+        RemoveKeysResult result;
+        result.id = id;
+        result.success = false;
+
+        // Fetch the instance data
+        std::pair<std::string, std::string> instanceData = dbManager_->getEntryById("instances", id);
+
+        if (instanceData.second.empty()) {
+            result.error = "Instance not found";
+            results.push_back(result);
+            continue;
+        }
+
+        // Parse the KeyValues data
+        auto kvData = ArcadeKeyValues::ParseFromHex(instanceData.second);
+        if (!kvData) {
+            result.error = "Failed to parse KeyValues data";
+            results.push_back(result);
+            continue;
+        }
+
+        // Navigate to the instance section (root -> "instance")
+        ArcadeKeyValues* instanceSection = kvData->GetFirstSubKey();
+        if (!instanceSection) {
+            result.error = "Invalid data structure";
+            results.push_back(result);
+            continue;
+        }
+
+        // Collect all anomalous keys (keys that are not in the expected set)
+        std::vector<std::string> keysToRemove;
+        ArcadeKeyValues* child = instanceSection->GetFirstSubKey();
+        while (child) {
+            const char* keyName = child->GetName();
+            if (keyName && keyName[0] != '\0') {
+                std::string key(keyName);
+                if (expectedKeys.find(key) == expectedKeys.end()) {
+                    keysToRemove.push_back(key);
+                }
+            }
+            child = child->GetNextKey();
+        }
+
+        // Remove all anomalous keys
+        bool allRemoved = true;
+        for (const auto& keyToRemove : keysToRemove) {
+            if (!instanceSection->RemoveKey(keyToRemove.c_str())) {
+                allRemoved = false;
+                OutputDebugStringA(("[Library] dbtRemoveAnomalousKeys: Failed to remove key '" + keyToRemove + "' from " + id + "\n").c_str());
+            }
+        }
+
+        if (!allRemoved) {
+            result.error = "Failed to remove some keys";
+            results.push_back(result);
+            continue;
+        }
+
+        // Serialize the modified KeyValues back to hex
+        std::string updatedHex = kvData->SerializeToHex();
+
+        // Update in database
+        if (dbManager_->updateEntryById("instances", id, updatedHex)) {
+            result.success = true;
+            result.error = "";
+            OutputDebugStringA(("[Library] dbtRemoveAnomalousKeys: Successfully removed " + std::to_string(keysToRemove.size()) + " keys from " + id + "\n").c_str());
+        } else {
+            result.error = "Failed to update database";
+            OutputDebugStringA(("[Library] dbtRemoveAnomalousKeys: Failed to update database for " + id + "\n").c_str());
+        }
+
+        results.push_back(result);
+    }
+
+    OutputDebugStringA(("[Library] dbtRemoveAnomalousKeys: Processed " + std::to_string(results.size()) + " instances\n").c_str());
+
+    return results;
 }

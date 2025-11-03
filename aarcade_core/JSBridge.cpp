@@ -177,6 +177,33 @@ JSValueRef dbtCompactDatabaseCallback(JSContextRef ctx, JSObjectRef function, JS
     return JSValueMakeNull(ctx);
 }
 
+JSValueRef dbtFindAnomalousInstancesCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    JSBridge* bridge = JSBridge::getInstance();
+    if (bridge) {
+        return bridge->dbtFindAnomalousInstances(ctx, function, thisObject, argumentCount, arguments, exception);
+    }
+    return JSValueMakeNull(ctx);
+}
+
+JSValueRef dbtGetInstanceKeyValuesCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    JSBridge* bridge = JSBridge::getInstance();
+    if (bridge) {
+        return bridge->dbtGetInstanceKeyValues(ctx, function, thisObject, argumentCount, arguments, exception);
+    }
+    return JSValueMakeNull(ctx);
+}
+
+JSValueRef dbtRemoveAnomalousKeysCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    JSBridge* bridge = JSBridge::getInstance();
+    if (bridge) {
+        return bridge->dbtRemoveAnomalousKeys(ctx, function, thisObject, argumentCount, arguments, exception);
+    }
+    return JSValueMakeNull(ctx);
+}
+
 JSBridge::JSBridge(SQLiteManager* dbManager, ArcadeConfig* config, Library* library)
     : dbManager_(dbManager), config_(config), library_(library), renderer_(nullptr), app_(nullptr), imageLoader_(nullptr) {
     // Set this as the global instance
@@ -321,6 +348,21 @@ void JSBridge::setupJavaScriptBridge(View* view, uint64_t frame_id, bool is_main
 
     methodName = JSStringCreateWithUTF8CString("dbtCompactDatabase");
     methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, dbtCompactDatabaseCallback);
+    JSObjectSetProperty(ctx, aapiObj, methodName, methodFunc, 0, 0);
+    JSStringRelease(methodName);
+
+    methodName = JSStringCreateWithUTF8CString("dbtFindAnomalousInstances");
+    methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, dbtFindAnomalousInstancesCallback);
+    JSObjectSetProperty(ctx, aapiObj, methodName, methodFunc, 0, 0);
+    JSStringRelease(methodName);
+
+    methodName = JSStringCreateWithUTF8CString("dbtGetInstanceKeyValues");
+    methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, dbtGetInstanceKeyValuesCallback);
+    JSObjectSetProperty(ctx, aapiObj, methodName, methodFunc, 0, 0);
+    JSStringRelease(methodName);
+
+    methodName = JSStringCreateWithUTF8CString("dbtRemoveAnomalousKeys");
+    methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, dbtRemoveAnomalousKeysCallback);
     JSObjectSetProperty(ctx, aapiObj, methodName, methodFunc, 0, 0);
     JSStringRelease(methodName);
 
@@ -1161,6 +1203,183 @@ JSValueRef JSBridge::dbtCompactDatabase(JSContextRef ctx, JSObjectRef function, 
     JSStringRelease(spaceSavedBytesKey);
 
     return resultObj;
+}
+
+JSValueRef JSBridge::dbtFindAnomalousInstances(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    OutputDebugStringA("[JSBridge] dbtFindAnomalousInstances called from JavaScript\n");
+
+    // Call Library method
+    std::vector<Library::AnomalousInstanceEntry> entries = library_->dbtFindAnomalousInstances();
+
+    OutputDebugStringA(("[JSBridge] Found " + std::to_string(entries.size()) + " anomalous instances\n").c_str());
+
+    // Convert to JavaScript array of objects
+    JSObjectRef resultsArray = JSObjectMakeArray(ctx, 0, nullptr, nullptr);
+
+    for (size_t i = 0; i < entries.size(); i++) {
+        const auto& entry = entries[i];
+
+        // Create object for this entry
+        JSObjectRef entryObj = JSObjectMake(ctx, nullptr, nullptr);
+
+        // Set id property
+        JSStringRef idKey = JSStringCreateWithUTF8CString("id");
+        JSStringRef idValue = JSStringCreateWithUTF8CString(entry.id.c_str());
+        JSObjectSetProperty(ctx, entryObj, idKey, JSValueMakeString(ctx, idValue), 0, nullptr);
+        JSStringRelease(idKey);
+        JSStringRelease(idValue);
+
+        // Set unexpectedKeys property (array of strings)
+        JSObjectRef unexpectedKeysArray = JSObjectMakeArray(ctx, 0, nullptr, nullptr);
+        for (size_t j = 0; j < entry.unexpectedKeys.size(); j++) {
+            JSStringRef keyStr = JSStringCreateWithUTF8CString(entry.unexpectedKeys[j].c_str());
+            JSValueRef keyValue = JSValueMakeString(ctx, keyStr);
+            JSObjectSetPropertyAtIndex(ctx, unexpectedKeysArray, j, keyValue, nullptr);
+            JSStringRelease(keyStr);
+        }
+
+        JSStringRef unexpectedKeysKey = JSStringCreateWithUTF8CString("unexpectedKeys");
+        JSObjectSetProperty(ctx, entryObj, unexpectedKeysKey, unexpectedKeysArray, 0, nullptr);
+        JSStringRelease(unexpectedKeysKey);
+
+        // Set keyCount property
+        JSStringRef keyCountKey = JSStringCreateWithUTF8CString("keyCount");
+        JSObjectSetProperty(ctx, entryObj, keyCountKey, JSValueMakeNumber(ctx, entry.keyCount), 0, nullptr);
+        JSStringRelease(keyCountKey);
+
+        // Set generation property (integer)
+        JSStringRef generationKey = JSStringCreateWithUTF8CString("generation");
+        JSObjectSetProperty(ctx, entryObj, generationKey, JSValueMakeNumber(ctx, entry.generation), 0, nullptr);
+        JSStringRelease(generationKey);
+
+        // Set legacy property (integer)
+        JSStringRef legacyKey = JSStringCreateWithUTF8CString("legacy");
+        JSObjectSetProperty(ctx, entryObj, legacyKey, JSValueMakeNumber(ctx, entry.legacy), 0, nullptr);
+        JSStringRelease(legacyKey);
+
+        // Add to results array
+        JSObjectSetPropertyAtIndex(ctx, resultsArray, i, entryObj, nullptr);
+    }
+
+    return resultsArray;
+}
+
+JSValueRef JSBridge::dbtGetInstanceKeyValues(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    OutputDebugStringA("[JSBridge] dbtGetInstanceKeyValues called from JavaScript\n");
+
+    if (argumentCount < 1) {
+        OutputDebugStringA("[JSBridge] dbtGetInstanceKeyValues: Missing parameter (instanceId)\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    // Get instance ID from first argument
+    JSStringRef instanceIdStr = JSValueToStringCopy(ctx, arguments[0], exception);
+    if (!instanceIdStr) {
+        OutputDebugStringA("[JSBridge] dbtGetInstanceKeyValues: Invalid instance ID parameter\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    size_t instanceIdLength = JSStringGetMaximumUTF8CStringSize(instanceIdStr);
+    char* instanceIdBuffer = new char[instanceIdLength];
+    JSStringGetUTF8CString(instanceIdStr, instanceIdBuffer, instanceIdLength);
+    std::string instanceId(instanceIdBuffer);
+    delete[] instanceIdBuffer;
+    JSStringRelease(instanceIdStr);
+
+    OutputDebugStringA(("[JSBridge] Fetching KeyValues for instance " + instanceId + "\n").c_str());
+
+    // Call Library method
+    std::string plainText = library_->dbtGetInstanceKeyValues(instanceId);
+
+    OutputDebugStringA(("[JSBridge] Retrieved KeyValues plain text (" + std::to_string(plainText.length()) + " chars)\n").c_str());
+
+    // Convert to JavaScript string
+    JSStringRef resultStr = JSStringCreateWithUTF8CString(plainText.c_str());
+    JSValueRef result = JSValueMakeString(ctx, resultStr);
+    JSStringRelease(resultStr);
+
+    return result;
+}
+
+JSValueRef JSBridge::dbtRemoveAnomalousKeys(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    OutputDebugStringA("[JSBridge] dbtRemoveAnomalousKeys called from JavaScript\n");
+
+    if (argumentCount < 1) {
+        OutputDebugStringA("[JSBridge] dbtRemoveAnomalousKeys: Missing parameter (instanceIds array)\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    // Get instance IDs array from first argument
+    JSObjectRef entryIdsArray = JSValueToObject(ctx, arguments[0], exception);
+    if (!entryIdsArray) {
+        OutputDebugStringA("[JSBridge] dbtRemoveAnomalousKeys: Invalid instanceIds array parameter\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    // Get array length
+    JSStringRef lengthProp = JSStringCreateWithUTF8CString("length");
+    JSValueRef lengthValue = JSObjectGetProperty(ctx, entryIdsArray, lengthProp, exception);
+    JSStringRelease(lengthProp);
+    double arrayLength = JSValueToNumber(ctx, lengthValue, exception);
+
+    // Extract instance IDs from array
+    std::vector<std::string> instanceIds;
+    for (size_t i = 0; i < arrayLength; i++) {
+        JSValueRef idValue = JSObjectGetPropertyAtIndex(ctx, entryIdsArray, i, exception);
+        JSStringRef idStr = JSValueToStringCopy(ctx, idValue, exception);
+        if (idStr) {
+            size_t idLength = JSStringGetMaximumUTF8CStringSize(idStr);
+            char* idBuffer = new char[idLength];
+            JSStringGetUTF8CString(idStr, idBuffer, idLength);
+            instanceIds.push_back(std::string(idBuffer));
+            delete[] idBuffer;
+            JSStringRelease(idStr);
+        }
+    }
+
+    OutputDebugStringA(("[JSBridge] Removing anomalous keys from " + std::to_string(instanceIds.size()) + " instances\n").c_str());
+
+    // Call Library method
+    std::vector<Library::RemoveKeysResult> results = library_->dbtRemoveAnomalousKeys(instanceIds);
+
+    OutputDebugStringA(("[JSBridge] Remove operation completed for " + std::to_string(results.size()) + " instances\n").c_str());
+
+    // Convert to JavaScript array of objects
+    JSObjectRef resultsArray = JSObjectMakeArray(ctx, 0, nullptr, nullptr);
+
+    for (size_t i = 0; i < results.size(); i++) {
+        const auto& result = results[i];
+
+        // Create object for this result
+        JSObjectRef resultObj = JSObjectMake(ctx, nullptr, nullptr);
+
+        // Set id property
+        JSStringRef idKey = JSStringCreateWithUTF8CString("id");
+        JSStringRef idValue = JSStringCreateWithUTF8CString(result.id.c_str());
+        JSObjectSetProperty(ctx, resultObj, idKey, JSValueMakeString(ctx, idValue), 0, nullptr);
+        JSStringRelease(idKey);
+        JSStringRelease(idValue);
+
+        // Set success property
+        JSStringRef successKey = JSStringCreateWithUTF8CString("success");
+        JSObjectSetProperty(ctx, resultObj, successKey, JSValueMakeBoolean(ctx, result.success), 0, nullptr);
+        JSStringRelease(successKey);
+
+        // Set error property
+        JSStringRef errorKey = JSStringCreateWithUTF8CString("error");
+        JSStringRef errorValue = JSStringCreateWithUTF8CString(result.error.c_str());
+        JSObjectSetProperty(ctx, resultObj, errorKey, JSValueMakeString(ctx, errorValue), 0, nullptr);
+        JSStringRelease(errorKey);
+        JSStringRelease(errorValue);
+
+        // Add to results array
+        JSObjectSetPropertyAtIndex(ctx, resultsArray, i, resultObj, nullptr);
+    }
+
+    return resultsArray;
 }
 
 // Setup JS bridge for image loader view

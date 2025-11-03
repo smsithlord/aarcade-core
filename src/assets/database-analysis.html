@@ -208,6 +208,59 @@
             display: none;
             box-sizing: border-box;
         }
+
+        .schema-tree {
+            width: 100%;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background: #f8f9fa;
+            display: none;
+            box-sizing: border-box;
+            text-align: left;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .schema-tree ul {
+            list-style: none;
+            padding-left: 0;
+            margin: 0;
+        }
+
+        .schema-tree ul ul {
+            padding-left: 20px;
+            margin-top: 5px;
+        }
+
+        .schema-tree li {
+            padding: 3px 0;
+            color: #333;
+        }
+
+        .schema-tree .field-name {
+            color: #0066cc;
+            font-weight: bold;
+        }
+
+        .schema-tree .nested-object {
+            color: #cc6600;
+            font-weight: bold;
+        }
+
+        .schema-tree .field-count {
+            color: #666;
+            font-size: 11px;
+            margin-left: 8px;
+        }
+
+        .schema-tree .placeholder {
+            color: #999;
+            font-style: italic;
+        }
         
         .info {
             background: #e3f2fd;
@@ -365,9 +418,11 @@
         </div>
 
         <div id="status" class="status"></div>
-        
+
         <textarea id="outputArea" placeholder="Entry data will appear here..."></textarea>
-        
+
+        <div id="schemaTree" class="schema-tree"></div>
+
         <div class="info">
             <p><strong>📋 Available Functions:</strong></p>
             <p>• <strong>Database Analysis:</strong> Shows database structure and info</p>
@@ -398,11 +453,15 @@
         function showOutput(data, message) {
             const status = document.getElementById('status');
             const outputArea = document.getElementById('outputArea');
-            
+            const schemaTree = document.getElementById('schemaTree');
+
+            // Hide schema tree when showing regular output
+            schemaTree.style.display = 'none';
+
             if (data && data !== null) {
                 status.className = 'status success';
                 status.textContent = message || '✅ Data retrieved successfully!';
-                
+
                 outputArea.style.display = 'block';
                 if (Array.isArray(data)) {
                     outputArea.value = JSON.stringify(data, null, 2);
@@ -419,10 +478,12 @@
         function showError(message) {
             const status = document.getElementById('status');
             const outputArea = document.getElementById('outputArea');
-            
+            const schemaTree = document.getElementById('schemaTree');
+
             status.className = 'status error';
             status.textContent = message;
             outputArea.style.display = 'none';
+            schemaTree.style.display = 'none';
         }
         
         function showRunning(message) {
@@ -529,6 +590,61 @@
             }
         }
         
+        // Build nested schema tree from flat dotted paths
+        function buildNestedSchema(flatSchema) {
+            const root = {};
+
+            flatSchema.forEach(path => {
+                const parts = path.split('.');
+                let current = root;
+
+                parts.forEach((part, index) => {
+                    if (!current[part]) {
+                        current[part] = {
+                            _isLeaf: index === parts.length - 1,
+                            _children: {}
+                        };
+                    }
+                    current = current[part]._children;
+                });
+            });
+
+            return root;
+        }
+
+        // Render nested schema as HTML tree
+        function renderSchemaTree(schema, level = 0) {
+            const keys = Object.keys(schema).sort();
+            if (keys.length === 0) return '';
+
+            let html = '<ul>';
+
+            keys.forEach(key => {
+                const node = schema[key];
+                const childKeys = Object.keys(node._children);
+                const hasChildren = childKeys.length > 0;
+                const isPlaceholder = key.startsWith('[') && key.endsWith(']');
+
+                if (hasChildren) {
+                    // This is a nested object
+                    const icon = isPlaceholder ? '🔑' : '📁';
+                    const className = isPlaceholder ? 'placeholder' : 'nested-object';
+                    html += `<li><span class="${className}">${icon} ${key}</span>`;
+                    html += `<span class="field-count">(${childKeys.length} field${childKeys.length !== 1 ? 's' : ''})</span>`;
+                    html += renderSchemaTree(node._children, level + 1);
+                    html += '</li>';
+                } else {
+                    // This is a leaf field
+                    const icon = isPlaceholder ? '🔑' : '📄';
+                    const className = isPlaceholder ? 'placeholder' : 'field-name';
+                    html += `<li><span class="${className}">${icon} ${key}</span></li>`;
+                }
+            });
+
+            html += '</ul>';
+            return html;
+        }
+
         // Schema construction function
         function constructTableSchema() {
             const entryType = document.getElementById('schemaEntryType').value;
@@ -537,14 +653,31 @@
             try {
                 const schema = aapi.constructSchema(entryType);
                 if (schema && schema.length > 0) {
-                    showOutput(schema, `✅ Found ${schema.length} unique fields in ${entryType}!`);
+                    // Build nested structure from flat paths
+                    const nestedSchema = buildNestedSchema(schema);
+
+                    // Render the tree
+                    const schemaTree = document.getElementById('schemaTree');
+                    schemaTree.innerHTML = renderSchemaTree(nestedSchema);
+                    schemaTree.style.display = 'block';
+
+                    // Hide textarea
+                    document.getElementById('outputArea').style.display = 'none';
+
+                    // Update status
+                    const status = document.getElementById('status');
+                    status.className = 'status success';
+                    status.textContent = `✅ Found ${schema.length} unique fields in ${entryType} (showing nested structure)`;
+
                     console.log(`Schema for ${entryType}:`, schema);
                 } else {
                     showError(`❌ No fields found for ${entryType}.`);
+                    document.getElementById('schemaTree').style.display = 'none';
                 }
             } catch (error) {
                 showError('❌ Error constructing schema: ' + error.message);
                 console.error('constructSchema error:', error);
+                document.getElementById('schemaTree').style.display = 'none';
             }
         }
 

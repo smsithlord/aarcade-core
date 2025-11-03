@@ -214,6 +214,20 @@ public:
         SetInt(keyName, value ? 1 : 0);
     }
 
+    // Remove a child key by name
+    bool RemoveKey(const char* keyName) {
+        if (keyName == nullptr) {
+            return false;
+        }
+
+        auto it = children.find(keyName);
+        if (it != children.end()) {
+            children.erase(it);
+            return true;
+        }
+        return false;
+    }
+
     // Utility methods
     bool IsEmpty() const {
         return valueType == TYPE_NONE && children.empty();
