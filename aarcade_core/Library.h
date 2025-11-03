@@ -57,6 +57,45 @@ public:
     // Schema construction
     std::vector<std::string> constructSchema(const std::string& entryType);
 
+    // Database tools: Large BLOB detection
+    struct LargeBlobEntry {
+        std::string id;
+        std::string title;
+        int sizeBytes;
+    };
+
+    std::vector<LargeBlobEntry> dbtFindLargeEntriesInTable(const std::string& tableName, int minSizeBytes);
+
+    // Trim text fields for specified entries
+    struct TrimResult {
+        std::string id;
+        bool success;
+        std::string error;
+    };
+
+    std::vector<TrimResult> dbtTrimTextFields(const std::string& tableName, const std::vector<std::string>& entryIds, int maxLength);
+
+    // Database maintenance
+    struct DatabaseStats {
+        std::string filePath;
+        int64_t fileSizeBytes;
+        int64_t pageCount;
+        int64_t pageSize;
+        int64_t freePages;
+        double fragmentationPercent;
+    };
+
+    struct CompactResult {
+        bool success;
+        std::string error;
+        int64_t beforeSizeBytes;
+        int64_t afterSizeBytes;
+        int64_t spaceSavedBytes;
+    };
+
+    DatabaseStats dbtGetDatabaseStats();
+    CompactResult dbtCompactDatabase();
+
     // Legacy method for backwards compatibility
     std::pair<std::string, std::string> getFirstItem();
 };

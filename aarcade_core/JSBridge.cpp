@@ -141,6 +141,42 @@ JSValueRef quitApplicationCallback(JSContextRef ctx, JSObjectRef function, JSObj
     return JSValueMakeBoolean(ctx, false);
 }
 
+JSValueRef dbtFindLargeEntriesInTableCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    JSBridge* bridge = JSBridge::getInstance();
+    if (bridge) {
+        return bridge->dbtFindLargeEntriesInTable(ctx, function, thisObject, argumentCount, arguments, exception);
+    }
+    return JSValueMakeNull(ctx);
+}
+
+JSValueRef dbtTrimTextFieldsCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    JSBridge* bridge = JSBridge::getInstance();
+    if (bridge) {
+        return bridge->dbtTrimTextFields(ctx, function, thisObject, argumentCount, arguments, exception);
+    }
+    return JSValueMakeNull(ctx);
+}
+
+JSValueRef dbtGetDatabaseStatsCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    JSBridge* bridge = JSBridge::getInstance();
+    if (bridge) {
+        return bridge->dbtGetDatabaseStats(ctx, function, thisObject, argumentCount, arguments, exception);
+    }
+    return JSValueMakeNull(ctx);
+}
+
+JSValueRef dbtCompactDatabaseCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    JSBridge* bridge = JSBridge::getInstance();
+    if (bridge) {
+        return bridge->dbtCompactDatabase(ctx, function, thisObject, argumentCount, arguments, exception);
+    }
+    return JSValueMakeNull(ctx);
+}
+
 JSBridge::JSBridge(SQLiteManager* dbManager, ArcadeConfig* config, Library* library)
     : dbManager_(dbManager), config_(config), library_(library), renderer_(nullptr), app_(nullptr), imageLoader_(nullptr) {
     // Set this as the global instance
@@ -267,6 +303,27 @@ void JSBridge::setupJavaScriptBridge(View* view, uint64_t frame_id, bool is_main
     JSObjectSetProperty(ctx, aapiObj, methodName, methodFunc, 0, 0);
     JSStringRelease(methodName);
 
+    // Register database tools methods
+    methodName = JSStringCreateWithUTF8CString("dbtFindLargeEntriesInTable");
+    methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, dbtFindLargeEntriesInTableCallback);
+    JSObjectSetProperty(ctx, aapiObj, methodName, methodFunc, 0, 0);
+    JSStringRelease(methodName);
+
+    methodName = JSStringCreateWithUTF8CString("dbtTrimTextFields");
+    methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, dbtTrimTextFieldsCallback);
+    JSObjectSetProperty(ctx, aapiObj, methodName, methodFunc, 0, 0);
+    JSStringRelease(methodName);
+
+    methodName = JSStringCreateWithUTF8CString("dbtGetDatabaseStats");
+    methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, dbtGetDatabaseStatsCallback);
+    JSObjectSetProperty(ctx, aapiObj, methodName, methodFunc, 0, 0);
+    JSStringRelease(methodName);
+
+    methodName = JSStringCreateWithUTF8CString("dbtCompactDatabase");
+    methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, dbtCompactDatabaseCallback);
+    JSObjectSetProperty(ctx, aapiObj, methodName, methodFunc, 0, 0);
+    JSStringRelease(methodName);
+
     // Add the aapi object to the global object
     JSStringRef aapiName = JSStringCreateWithUTF8CString("aapi");
     JSObjectSetProperty(ctx, globalObj, aapiName, aapiObj, 0, 0);
@@ -286,6 +343,10 @@ void JSBridge::setupJavaScriptBridge(View* view, uint64_t frame_id, bool is_main
     OutputDebugStringA("[JSBridge]   - aapi.processImageCompletions\n");
     OutputDebugStringA("[JSBridge]   - aapi.getSupportedEntryTypes\n");
     OutputDebugStringA("[JSBridge]   - aapi.constructSchema\n");
+    OutputDebugStringA("[JSBridge]   - aapi.dbtFindLargeEntriesInTable\n");
+    OutputDebugStringA("[JSBridge]   - aapi.dbtTrimTextFields\n");
+    OutputDebugStringA("[JSBridge]   - aapi.dbtGetDatabaseStats\n");
+    OutputDebugStringA("[JSBridge]   - aapi.dbtCompactDatabase\n");
 }
 
 // Helper function to convert Windows path to file:// URL
@@ -837,6 +898,269 @@ JSValueRef JSBridge::getFirstSearchResults(JSContextRef ctx, JSObjectRef functio
     std::vector<std::pair<std::string, std::string>> results = library_->getFirstSearchResults(entryType, searchTerm, count);
 
     return createJSArray(ctx, results);
+}
+
+JSValueRef JSBridge::dbtFindLargeEntriesInTable(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    OutputDebugStringA("[JSBridge] dbtFindLargeEntriesInTable called from JavaScript\n");
+
+    if (argumentCount < 2) {
+        OutputDebugStringA("[JSBridge] dbtFindLargeEntriesInTable: Missing parameters (tableName, minSizeBytes)\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    // Get table name from first argument
+    JSStringRef tableNameStr = JSValueToStringCopy(ctx, arguments[0], exception);
+    if (!tableNameStr) {
+        OutputDebugStringA("[JSBridge] dbtFindLargeEntriesInTable: Invalid table name parameter\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    size_t tableNameLength = JSStringGetMaximumUTF8CStringSize(tableNameStr);
+    char* tableNameBuffer = new char[tableNameLength];
+    JSStringGetUTF8CString(tableNameStr, tableNameBuffer, tableNameLength);
+    std::string tableName(tableNameBuffer);
+    delete[] tableNameBuffer;
+    JSStringRelease(tableNameStr);
+
+    // Get minimum size from second argument
+    double minSizeBytesDouble = JSValueToNumber(ctx, arguments[1], exception);
+    int minSizeBytes = static_cast<int>(minSizeBytesDouble);
+
+    if (minSizeBytes <= 0) {
+        OutputDebugStringA("[JSBridge] dbtFindLargeEntriesInTable: Invalid minSizeBytes parameter\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    OutputDebugStringA(("[JSBridge] Searching " + tableName + " for entries over " + std::to_string(minSizeBytes) + " bytes\n").c_str());
+
+    // Get large entries from Library
+    std::vector<Library::LargeBlobEntry> entries = library_->dbtFindLargeEntriesInTable(tableName, minSizeBytes);
+
+    OutputDebugStringA(("[JSBridge] Found " + std::to_string(entries.size()) + " large entries\n").c_str());
+
+    // Convert to JavaScript array of objects
+    JSObjectRef resultsArray = JSObjectMakeArray(ctx, 0, nullptr, nullptr);
+
+    for (size_t i = 0; i < entries.size(); i++) {
+        JSObjectRef entryObj = JSObjectMake(ctx, nullptr, nullptr);
+
+        // Set id property
+        JSStringRef idKey = JSStringCreateWithUTF8CString("id");
+        JSStringRef idValue = JSStringCreateWithUTF8CString(entries[i].id.c_str());
+        JSObjectSetProperty(ctx, entryObj, idKey, JSValueMakeString(ctx, idValue), 0, nullptr);
+        JSStringRelease(idKey);
+        JSStringRelease(idValue);
+
+        // Set title property
+        JSStringRef titleKey = JSStringCreateWithUTF8CString("title");
+        JSStringRef titleValue = JSStringCreateWithUTF8CString(entries[i].title.c_str());
+        JSObjectSetProperty(ctx, entryObj, titleKey, JSValueMakeString(ctx, titleValue), 0, nullptr);
+        JSStringRelease(titleKey);
+        JSStringRelease(titleValue);
+
+        // Set sizeBytes property
+        JSStringRef sizeKey = JSStringCreateWithUTF8CString("sizeBytes");
+        JSObjectSetProperty(ctx, entryObj, sizeKey, JSValueMakeNumber(ctx, entries[i].sizeBytes), 0, nullptr);
+        JSStringRelease(sizeKey);
+
+        // Add to array
+        JSObjectSetPropertyAtIndex(ctx, resultsArray, i, entryObj, nullptr);
+    }
+
+    return resultsArray;
+}
+
+JSValueRef JSBridge::dbtTrimTextFields(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    OutputDebugStringA("[JSBridge] dbtTrimTextFields called from JavaScript\n");
+
+    if (argumentCount < 3) {
+        OutputDebugStringA("[JSBridge] dbtTrimTextFields: Missing parameters (tableName, entryIds, maxLength)\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    // Get table name from first argument
+    JSStringRef tableNameStr = JSValueToStringCopy(ctx, arguments[0], exception);
+    if (!tableNameStr) {
+        OutputDebugStringA("[JSBridge] dbtTrimTextFields: Invalid table name parameter\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    size_t tableNameLength = JSStringGetMaximumUTF8CStringSize(tableNameStr);
+    char* tableNameBuffer = new char[tableNameLength];
+    JSStringGetUTF8CString(tableNameStr, tableNameBuffer, tableNameLength);
+    std::string tableName(tableNameBuffer);
+    delete[] tableNameBuffer;
+    JSStringRelease(tableNameStr);
+
+    // Get entryIds array from second argument
+    JSObjectRef entryIdsArray = JSValueToObject(ctx, arguments[1], exception);
+    if (!entryIdsArray) {
+        OutputDebugStringA("[JSBridge] dbtTrimTextFields: Invalid entryIds parameter\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    // Get array length
+    JSStringRef lengthProp = JSStringCreateWithUTF8CString("length");
+    JSValueRef lengthValue = JSObjectGetProperty(ctx, entryIdsArray, lengthProp, exception);
+    JSStringRelease(lengthProp);
+    double lengthDouble = JSValueToNumber(ctx, lengthValue, exception);
+    size_t arrayLength = static_cast<size_t>(lengthDouble);
+
+    // Extract entry IDs from array
+    std::vector<std::string> entryIds;
+    for (size_t i = 0; i < arrayLength; i++) {
+        JSValueRef idValue = JSObjectGetPropertyAtIndex(ctx, entryIdsArray, i, exception);
+        JSStringRef idStr = JSValueToStringCopy(ctx, idValue, exception);
+        if (idStr) {
+            size_t idLength = JSStringGetMaximumUTF8CStringSize(idStr);
+            char* idBuffer = new char[idLength];
+            JSStringGetUTF8CString(idStr, idBuffer, idLength);
+            entryIds.push_back(std::string(idBuffer));
+            delete[] idBuffer;
+            JSStringRelease(idStr);
+        }
+    }
+
+    // Get max length from third argument
+    double maxLengthDouble = JSValueToNumber(ctx, arguments[2], exception);
+    int maxLength = static_cast<int>(maxLengthDouble);
+
+    if (maxLength <= 0) {
+        OutputDebugStringA("[JSBridge] dbtTrimTextFields: Invalid maxLength parameter\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    OutputDebugStringA(("[JSBridge] Trimming text fields for " + std::to_string(entryIds.size()) + " entries to max " + std::to_string(maxLength) + " chars\n").c_str());
+
+    // Call Library method
+    std::vector<Library::TrimResult> results = library_->dbtTrimTextFields(tableName, entryIds, maxLength);
+
+    OutputDebugStringA(("[JSBridge] Trim operation completed for " + std::to_string(results.size()) + " entries\n").c_str());
+
+    // Convert to JavaScript array of objects
+    JSObjectRef resultsArray = JSObjectMakeArray(ctx, 0, nullptr, nullptr);
+
+    for (size_t i = 0; i < results.size(); i++) {
+        JSObjectRef resultObj = JSObjectMake(ctx, nullptr, nullptr);
+
+        // Set id property
+        JSStringRef idKey = JSStringCreateWithUTF8CString("id");
+        JSStringRef idValue = JSStringCreateWithUTF8CString(results[i].id.c_str());
+        JSObjectSetProperty(ctx, resultObj, idKey, JSValueMakeString(ctx, idValue), 0, nullptr);
+        JSStringRelease(idKey);
+        JSStringRelease(idValue);
+
+        // Set success property
+        JSStringRef successKey = JSStringCreateWithUTF8CString("success");
+        JSObjectSetProperty(ctx, resultObj, successKey, JSValueMakeBoolean(ctx, results[i].success), 0, nullptr);
+        JSStringRelease(successKey);
+
+        // Set error property
+        JSStringRef errorKey = JSStringCreateWithUTF8CString("error");
+        JSStringRef errorValue = JSStringCreateWithUTF8CString(results[i].error.c_str());
+        JSObjectSetProperty(ctx, resultObj, errorKey, JSValueMakeString(ctx, errorValue), 0, nullptr);
+        JSStringRelease(errorKey);
+        JSStringRelease(errorValue);
+
+        // Add to array
+        JSObjectSetPropertyAtIndex(ctx, resultsArray, i, resultObj, nullptr);
+    }
+
+    return resultsArray;
+}
+
+JSValueRef JSBridge::dbtGetDatabaseStats(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    OutputDebugStringA("[JSBridge] dbtGetDatabaseStats called from JavaScript\n");
+
+    // Get database stats from Library
+    Library::DatabaseStats stats = library_->dbtGetDatabaseStats();
+
+    OutputDebugStringA(("[JSBridge] Stats received: fragmentationPercent=" + std::to_string(stats.fragmentationPercent) +
+                       ", freePages=" + std::to_string(stats.freePages) +
+                       ", pageCount=" + std::to_string(stats.pageCount) + "\n").c_str());
+
+    // Convert to JavaScript object
+    JSObjectRef statsObj = JSObjectMake(ctx, nullptr, nullptr);
+
+    // Set filePath property
+    JSStringRef filePathKey = JSStringCreateWithUTF8CString("filePath");
+    JSStringRef filePathValue = JSStringCreateWithUTF8CString(stats.filePath.c_str());
+    JSObjectSetProperty(ctx, statsObj, filePathKey, JSValueMakeString(ctx, filePathValue), 0, nullptr);
+    JSStringRelease(filePathKey);
+    JSStringRelease(filePathValue);
+
+    // Set fileSizeBytes property
+    JSStringRef fileSizeBytesKey = JSStringCreateWithUTF8CString("fileSizeBytes");
+    JSObjectSetProperty(ctx, statsObj, fileSizeBytesKey, JSValueMakeNumber(ctx, stats.fileSizeBytes), 0, nullptr);
+    JSStringRelease(fileSizeBytesKey);
+
+    // Set pageCount property
+    JSStringRef pageCountKey = JSStringCreateWithUTF8CString("pageCount");
+    JSObjectSetProperty(ctx, statsObj, pageCountKey, JSValueMakeNumber(ctx, stats.pageCount), 0, nullptr);
+    JSStringRelease(pageCountKey);
+
+    // Set pageSize property
+    JSStringRef pageSizeKey = JSStringCreateWithUTF8CString("pageSize");
+    JSObjectSetProperty(ctx, statsObj, pageSizeKey, JSValueMakeNumber(ctx, stats.pageSize), 0, nullptr);
+    JSStringRelease(pageSizeKey);
+
+    // Set freePages property
+    JSStringRef freePagesKey = JSStringCreateWithUTF8CString("freePages");
+    JSObjectSetProperty(ctx, statsObj, freePagesKey, JSValueMakeNumber(ctx, stats.freePages), 0, nullptr);
+    JSStringRelease(freePagesKey);
+
+    // Set fragmentationPercent property
+    JSStringRef fragmentationPercentKey = JSStringCreateWithUTF8CString("fragmentationPercent");
+    JSObjectSetProperty(ctx, statsObj, fragmentationPercentKey, JSValueMakeNumber(ctx, stats.fragmentationPercent), 0, nullptr);
+    JSStringRelease(fragmentationPercentKey);
+
+    return statsObj;
+}
+
+JSValueRef JSBridge::dbtCompactDatabase(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    OutputDebugStringA("[JSBridge] dbtCompactDatabase called from JavaScript\n");
+
+    // Call Library method
+    Library::CompactResult result = library_->dbtCompactDatabase();
+
+    OutputDebugStringA(("[JSBridge] Compact result: success=" + std::string(result.success ? "true" : "false") +
+                       ", saved=" + std::to_string(result.spaceSavedBytes) + " bytes\n").c_str());
+
+    // Convert to JavaScript object
+    JSObjectRef resultObj = JSObjectMake(ctx, nullptr, nullptr);
+
+    // Set success property
+    JSStringRef successKey = JSStringCreateWithUTF8CString("success");
+    JSObjectSetProperty(ctx, resultObj, successKey, JSValueMakeBoolean(ctx, result.success), 0, nullptr);
+    JSStringRelease(successKey);
+
+    // Set error property
+    JSStringRef errorKey = JSStringCreateWithUTF8CString("error");
+    JSStringRef errorValue = JSStringCreateWithUTF8CString(result.error.c_str());
+    JSObjectSetProperty(ctx, resultObj, errorKey, JSValueMakeString(ctx, errorValue), 0, nullptr);
+    JSStringRelease(errorKey);
+    JSStringRelease(errorValue);
+
+    // Set beforeSizeBytes property
+    JSStringRef beforeSizeBytesKey = JSStringCreateWithUTF8CString("beforeSizeBytes");
+    JSObjectSetProperty(ctx, resultObj, beforeSizeBytesKey, JSValueMakeNumber(ctx, result.beforeSizeBytes), 0, nullptr);
+    JSStringRelease(beforeSizeBytesKey);
+
+    // Set afterSizeBytes property
+    JSStringRef afterSizeBytesKey = JSStringCreateWithUTF8CString("afterSizeBytes");
+    JSObjectSetProperty(ctx, resultObj, afterSizeBytesKey, JSValueMakeNumber(ctx, result.afterSizeBytes), 0, nullptr);
+    JSStringRelease(afterSizeBytesKey);
+
+    // Set spaceSavedBytes property
+    JSStringRef spaceSavedBytesKey = JSStringCreateWithUTF8CString("spaceSavedBytes");
+    JSObjectSetProperty(ctx, resultObj, spaceSavedBytesKey, JSValueMakeNumber(ctx, result.spaceSavedBytes), 0, nullptr);
+    JSStringRelease(spaceSavedBytesKey);
+
+    return resultObj;
 }
 
 // Setup JS bridge for image loader view

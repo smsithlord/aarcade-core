@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detect Large Entries - Database Tools</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+
+        .page-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+            min-height: calc(100vh - 40px);
+        }
+
+        .breadcrumbs {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 12px 20px;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.1);
+            font-size: 14px;
+        }
+
+        .breadcrumbs a {
+            color: #667eea;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .breadcrumbs a:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+
+        .breadcrumbs .separator {
+            margin: 0 8px;
+            color: #999;
+        }
+
+        .breadcrumbs .current {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            min-width: 800px;
+            max-width: 1200px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+
+        .button-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            background: #f9f9f9;
+        }
+
+        .section-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .entry-button {
+            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(68, 160, 141, 0.3);
+            margin: 5px;
+        }
+
+        .utility-button {
+            background: linear-gradient(45deg, #9b59b6, #8e44ad);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(142, 68, 173, 0.3);
+            margin: 5px;
+        }
+
+        .entry-button:hover, .utility-button:hover {
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .type-selector {
+            padding: 8px;
+            margin: 0 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            font-size: 14px;
+        }
+
+        label {
+            margin: 0 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+            min-height: 20px;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.running {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        #resultsSection {
+            margin-top: 30px;
+        }
+
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+        }
+
+        .results-table th {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        .results-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .results-table tr:hover {
+            background: #f5f5f5;
+        }
+
+        .results-table input[type="checkbox"] {
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+        }
+
+        .info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 4px solid #2196f3;
+        }
+
+        .info p {
+            margin: 5px 0;
+            color: #1565c0;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="breadcrumbs">
+        <a href="welcome.html">Home</a>
+        <span class="separator">/</span>
+        <a href="database-tools.html">Database Tools</a>
+        <span class="separator">/</span>
+        <span class="current">Detect Large Entries</span>
+    </nav>
+
+    <div class="page-wrapper">
+        <div class="container">
+            <h1>🔍 Detect Large Entries</h1>
+            <p class="subtitle">Find oversized BLOB entries in database tables</p>
+
+            <div class="button-section">
+                <div class="section-title">🔧 Detection Settings</div>
+
+                <label>Table:</label>
+                <select id="tableSelector" class="type-selector">
+                    <option value="items" selected>items</option>
+                    <option value="apps">apps</option>
+                    <option value="instances">instances</option>
+                    <option value="maps">maps</option>
+                    <option value="models">models</option>
+                    <option value="platforms">platforms</option>
+                    <option value="types">types</option>
+                </select>
+
+                <label>Expected Text Size:</label>
+                <select id="textSizeSelector" class="type-selector">
+                    <option value="4000" selected>~4000 chars (default)</option>
+                    <option value="2000">~2000 chars</option>
+                    <option value="8000">~8000 chars</option>
+                    <option value="16000">~16000 chars</option>
+                </select>
+
+                <button class="entry-button" onclick="detectLargeEntries()">
+                    🔍 Detect Large Entries
+                </button>
+            </div>
+
+            <div id="status" class="status"></div>
+
+            <div id="resultsSection" style="display: none;">
+                <div class="section-title">📊 Results</div>
+
+                <table id="resultsTable" class="results-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="selectAll" onclick="toggleSelectAll()"></th>
+                            <th>ID</th>
+                            <th>Title</th>
+                            <th>Size (bytes)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody">
+                    </tbody>
+                </table>
+
+                <div class="button-section" style="margin-top: 20px;">
+                    <div class="section-title">⚡ Bulk Operations</div>
+
+                    <button class="utility-button" onclick="bulkTrimText()">
+                        ✂️ Trim Text Fields
+                    </button>
+
+                    <button class="utility-button" onclick="bulkTrimUrls()">
+                        🔗 Trim URL Fields (COMING SOON)
+                    </button>
+
+                    <label>Truncate at:</label>
+                    <select id="truncateSizeSelector" class="type-selector">
+                        <option value="256">256</option>
+                        <option value="512">512</option>
+                        <option value="1024">1024</option>
+                        <option value="2048" selected>2048</option>
+                    </select>
+                    <span>characters</span>
+                </div>
+            </div>
+
+            <div class="info">
+                <p><strong>ℹ️ About This Tool:</strong></p>
+                <p>• Detects BLOB entries larger than expected text size</p>
+                <p>• Expected size calculated as: chars × 2 bytes (worst case UTF-16)</p>
+                <p>• Results show items with oversized data fields</p>
+                <p>• Trim Text Fields: Truncates title and description fields to specified length</p>
+                <p>• Trim URL Fields: Coming soon</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let largeEntries = [];
+
+        function detectLargeEntries() {
+            const tableName = document.getElementById('tableSelector').value;
+            const expectedTextSize = parseInt(document.getElementById('textSizeSelector').value);
+
+            // Calculate min blob size (text chars × 2 for worst-case UTF-16 encoding)
+            const minBlobSize = expectedTextSize * 2;
+
+            showRunning(`🔄 Scanning ${tableName} table for entries over ${minBlobSize} bytes...`);
+
+            try {
+                // Call C++ backend
+                const results = aapi.dbtFindLargeEntriesInTable(tableName, minBlobSize);
+
+                if (results && results.length > 0) {
+                    largeEntries = results;
+                    displayResults(results);
+                    showSuccess(`✅ Found ${results.length} large entries!`);
+                } else {
+                    largeEntries = [];
+                    hideResults();
+                    showSuccess(`✅ No large entries found in ${tableName} table.`);
+                }
+            } catch (error) {
+                showError('❌ Error detecting large entries: ' + error.message);
+                console.error('Detection error:', error);
+            }
+        }
+
+        function displayResults(results) {
+            const resultsSection = document.getElementById('resultsSection');
+            const resultsBody = document.getElementById('resultsBody');
+
+            // Clear previous results
+            resultsBody.innerHTML = '';
+
+            // Populate table
+            results.forEach((entry, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><input type="checkbox" class="entry-checkbox" data-index="${index}"></td>
+                    <td>${escapeHtml(entry.id)}</td>
+                    <td>${escapeHtml(entry.title)}</td>
+                    <td>${entry.sizeBytes.toLocaleString()}</td>
+                `;
+                resultsBody.appendChild(row);
+            });
+
+            resultsSection.style.display = 'block';
+        }
+
+        function hideResults() {
+            document.getElementById('resultsSection').style.display = 'none';
+        }
+
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('selectAll');
+            const checkboxes = document.querySelectorAll('.entry-checkbox');
+            checkboxes.forEach(cb => cb.checked = selectAll.checked);
+        }
+
+        function getSelectedEntries() {
+            const selected = [];
+            const checkboxes = document.querySelectorAll('.entry-checkbox:checked');
+            checkboxes.forEach(cb => {
+                const index = parseInt(cb.dataset.index);
+                selected.push(largeEntries[index]);
+            });
+            return selected;
+        }
+
+        // Bulk trim text fields operation
+        function bulkTrimText() {
+            const selected = getSelectedEntries();
+            const truncateSize = parseInt(document.getElementById('truncateSizeSelector').value);
+            const tableName = document.getElementById('tableSelector').value;
+
+            if (selected.length === 0) {
+                showError('❌ Please select at least one entry.');
+                return;
+            }
+
+            showRunning(`⏳ Trimming text fields to ${truncateSize} chars for ${selected.length} entries...`);
+
+            try {
+                // Extract entry IDs
+                const entryIds = selected.map(entry => entry.id);
+
+                // Call C++ backend
+                const results = aapi.dbtTrimTextFields(tableName, entryIds, truncateSize);
+
+                // Count successes and failures
+                let successCount = 0;
+                let failureCount = 0;
+                let failedIds = [];
+
+                results.forEach(result => {
+                    if (result.success) {
+                        successCount++;
+                    } else {
+                        failureCount++;
+                        failedIds.push(result.id + ': ' + result.error);
+                    }
+                });
+
+                // Show results
+                if (failureCount === 0) {
+                    showSuccess(`✅ Successfully trimmed text fields for ${successCount} entries!`);
+                    // Refresh the results to show updated sizes
+                    setTimeout(() => detectLargeEntries(), 1000);
+                } else if (successCount === 0) {
+                    showError(`❌ Failed to trim all ${failureCount} entries. ${failedIds.join(', ')}`);
+                } else {
+                    showInfo(`⚠️ Partial success: ${successCount} succeeded, ${failureCount} failed. Failed: ${failedIds.join(', ')}`);
+                    // Refresh the results
+                    setTimeout(() => detectLargeEntries(), 1000);
+                }
+
+                console.log('Trim results:', results);
+            } catch (error) {
+                showError('❌ Error trimming text fields: ' + error.message);
+                console.error('Trim error:', error);
+            }
+        }
+
+        function bulkTrimUrls() {
+            const selected = getSelectedEntries();
+            const truncateSize = document.getElementById('truncateSizeSelector').value;
+
+            if (selected.length === 0) {
+                showError('❌ Please select at least one entry.');
+                return;
+            }
+
+            showRunning(`⏳ COMING SOON: Trim URL fields to ${truncateSize} chars for ${selected.length} entries...`);
+
+            setTimeout(() => {
+                showInfo(`ℹ️ This feature is not yet implemented. Selected ${selected.length} entries.`);
+            }, 1000);
+        }
+
+        // Status display functions
+        function showRunning(message) {
+            const status = document.getElementById('status');
+            status.className = 'status running';
+            status.textContent = message;
+        }
+
+        function showSuccess(message) {
+            const status = document.getElementById('status');
+            status.className = 'status success';
+            status.textContent = message;
+        }
+
+        function showError(message) {
+            const status = document.getElementById('status');
+            status.className = 'status error';
+            status.textContent = message;
+        }
+
+        function showInfo(message) {
+            const status = document.getElementById('status');
+            status.className = 'status running';
+            status.textContent = message;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Initialize on load
+        window.addEventListener('load', function() {
+            showSuccess('🟢 Ready to detect large entries');
+        });
+    </script>
+</body>
+</html>

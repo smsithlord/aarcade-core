@@ -265,6 +265,28 @@ public:
         return children;
     }
 
+    // Serialize to binary format
+    std::vector<uint8_t> SerializeToBinary() const {
+        std::vector<uint8_t> result;
+        serializeRecursive(result);
+        return result;
+    }
+
+    // Convert to hex string
+    std::string SerializeToHex() const {
+        std::vector<uint8_t> binary = SerializeToBinary();
+        std::string hexString;
+        hexString.reserve(binary.size() * 2);
+
+        for (uint8_t byte : binary) {
+            char hexByte[3];
+            snprintf(hexByte, sizeof(hexByte), "%02x", byte);
+            hexString += hexByte;
+        }
+
+        return hexString;
+    }
+
 private:
     // Helper methods for parsing
     static std::vector<uint8_t> hexToBytes(const std::string& hex) {
@@ -352,6 +374,57 @@ private:
         }
 
         return kv;
+    }
+
+    // Helper method to serialize to binary format
+    void serializeRecursive(std::vector<uint8_t>& buffer) const {
+        // Serialize all children
+        for (const auto& pair : children) {
+            const std::string& childName = pair.first;
+            const std::unique_ptr<ArcadeKeyValues>& child = pair.second;
+
+            // Write type byte
+            if (child->valueType == TYPE_SUBSECTION || child->GetChildCount() > 0) {
+                buffer.push_back(0x00); // Nested object
+            }
+            else if (child->valueType == TYPE_STRING) {
+                buffer.push_back(0x01); // String
+            }
+            else if (child->valueType == TYPE_INT) {
+                buffer.push_back(0x02); // Int32
+            }
+            else {
+                continue; // Skip unknown types
+            }
+
+            // Write key name
+            for (char c : childName) {
+                buffer.push_back(static_cast<uint8_t>(c));
+            }
+            buffer.push_back(0x00); // Null terminator
+
+            // Write value based on type
+            if (child->valueType == TYPE_SUBSECTION || child->GetChildCount() > 0) {
+                // Recursively serialize nested object
+                child->serializeRecursive(buffer);
+                buffer.push_back(0x08); // End of object marker
+            }
+            else if (child->valueType == TYPE_STRING) {
+                // Write string value
+                for (char c : child->stringValue) {
+                    buffer.push_back(static_cast<uint8_t>(c));
+                }
+                buffer.push_back(0x00); // Null terminator
+            }
+            else if (child->valueType == TYPE_INT) {
+                // Write int32 value (little-endian)
+                int32_t value = child->intValue;
+                buffer.push_back(static_cast<uint8_t>(value & 0xFF));
+                buffer.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+                buffer.push_back(static_cast<uint8_t>((value >> 16) & 0xFF));
+                buffer.push_back(static_cast<uint8_t>((value >> 24) & 0xFF));
+            }
+        }
     }
 };
 

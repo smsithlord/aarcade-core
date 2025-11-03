@@ -296,6 +296,259 @@ public:
         };
     }
 
+    // Helper method to get a single entry by ID
+    std::pair<std::string, std::string> getEntryById(const std::string& tableName, const std::string& id) {
+        if (!db) {
+            debugOutput("No database connection available.");
+            return { "", "" };
+        }
+
+        std::string sql = "SELECT id, value FROM \"" + tableName + "\" WHERE id = ?;";
+
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            debugOutput("Failed to prepare entry query for ID " + id + ": " + std::string(sqlite3_errmsg(db)));
+            return { "", "" };
+        }
+
+        // Bind the ID parameter
+        sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+
+        std::pair<std::string, std::string> result = { "", "" };
+
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            const char* foundId = (const char*)sqlite3_column_text(stmt, 0);
+            const void* valueBlob = sqlite3_column_blob(stmt, 1);
+            int valueSize = sqlite3_column_bytes(stmt, 1);
+
+            if (foundId) {
+                result.first = std::string(foundId);
+            }
+
+            if (valueBlob && valueSize > 0) {
+                // Convert binary data to hex string
+                const unsigned char* bytes = static_cast<const unsigned char*>(valueBlob);
+                std::string hexString;
+                hexString.reserve(valueSize * 2);
+
+                for (int i = 0; i < valueSize; i++) {
+                    char hexByte[3];
+                    sprintf_s(hexByte, sizeof(hexByte), "%02x", bytes[i]);
+                    hexString += hexByte;
+                }
+
+                result.second = hexString;
+            }
+        }
+
+        sqlite3_finalize(stmt);
+        return result;
+    }
+
+    // Helper method to update an entry by ID
+    bool updateEntryById(const std::string& tableName, const std::string& id, const std::string& hexData) {
+        if (!db) {
+            debugOutput("No database connection available.");
+            return false;
+        }
+
+        if (hexData.empty()) {
+            debugOutput("Empty hex data provided for update.");
+            return false;
+        }
+
+        // Convert hex string back to binary
+        std::vector<uint8_t> binaryData;
+        for (size_t i = 0; i < hexData.length(); i += 2) {
+            if (i + 1 < hexData.length()) {
+                uint8_t byte = static_cast<uint8_t>(std::stoi(hexData.substr(i, 2), nullptr, 16));
+                binaryData.push_back(byte);
+            }
+        }
+
+        if (binaryData.empty()) {
+            debugOutput("Failed to convert hex data to binary.");
+            return false;
+        }
+
+        std::string sql = "UPDATE \"" + tableName + "\" SET value = ? WHERE id = ?;";
+
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            debugOutput("Failed to prepare update query for ID " + id + ": " + std::string(sqlite3_errmsg(db)));
+            return false;
+        }
+
+        // Bind the binary data
+        sqlite3_bind_blob(stmt, 1, binaryData.data(), static_cast<int>(binaryData.size()), SQLITE_TRANSIENT);
+
+        // Bind the ID
+        sqlite3_bind_text(stmt, 2, id.c_str(), -1, SQLITE_TRANSIENT);
+
+        int result = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (result != SQLITE_DONE) {
+            debugOutput("Failed to update entry " + id + ": " + std::string(sqlite3_errmsg(db)));
+            return false;
+        }
+
+        debugOutput("Successfully updated entry: " + id);
+        return true;
+    }
+
+    // Database tools: Get database file size
+    struct DatabaseStats {
+        std::string filePath;
+        int64_t fileSizeBytes;
+        int64_t pageCount;
+        int64_t pageSize;
+        int64_t freePages;
+        double fragmentationPercent;
+    };
+
+    DatabaseStats dbtGetDatabaseStats() {
+        DatabaseStats stats;
+        stats.fileSizeBytes = 0;
+        stats.pageCount = 0;
+        stats.pageSize = 0;
+        stats.freePages = 0;
+        stats.fragmentationPercent = 0.0;
+
+        if (!db) {
+            debugOutput("No database connection available.");
+            return stats;
+        }
+
+        // Get database file path
+        const char* dbPath = sqlite3_db_filename(db, "main");
+        if (dbPath) {
+            stats.filePath = std::string(dbPath);
+
+            // Get file size
+            WIN32_FILE_ATTRIBUTE_DATA fileInfo;
+            if (GetFileAttributesExA(dbPath, GetFileExInfoStandard, &fileInfo)) {
+                LARGE_INTEGER fileSize;
+                fileSize.LowPart = fileInfo.nFileSizeLow;
+                fileSize.HighPart = fileInfo.nFileSizeHigh;
+                stats.fileSizeBytes = fileSize.QuadPart;
+            }
+        }
+
+        // Get page count
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(db, "PRAGMA page_count;", -1, &stmt, nullptr) == SQLITE_OK) {
+            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                stats.pageCount = sqlite3_column_int64(stmt, 0);
+            }
+            sqlite3_finalize(stmt);
+        }
+
+        // Get page size
+        if (sqlite3_prepare_v2(db, "PRAGMA page_size;", -1, &stmt, nullptr) == SQLITE_OK) {
+            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                stats.pageSize = sqlite3_column_int64(stmt, 0);
+            }
+            sqlite3_finalize(stmt);
+        }
+
+        // Get free pages
+        if (sqlite3_prepare_v2(db, "PRAGMA freelist_count;", -1, &stmt, nullptr) == SQLITE_OK) {
+            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                stats.freePages = sqlite3_column_int64(stmt, 0);
+            }
+            sqlite3_finalize(stmt);
+        }
+
+        // Calculate fragmentation percentage
+        if (stats.pageCount > 0) {
+            stats.fragmentationPercent = (static_cast<double>(stats.freePages) / static_cast<double>(stats.pageCount)) * 100.0;
+        }
+
+        debugOutput("Database stats: " + std::to_string(stats.fileSizeBytes) + " bytes, " +
+                   std::to_string(stats.pageCount) + " pages, " +
+                   std::to_string(stats.freePages) + " free pages (" +
+                   std::to_string(stats.fragmentationPercent) + "% fragmentation)");
+
+        return stats;
+    }
+
+    // Database tools: Compact database (VACUUM)
+    bool dbtCompactDatabase() {
+        if (!db) {
+            debugOutput("No database connection available.");
+            return false;
+        }
+
+        debugOutput("Starting database VACUUM operation...");
+
+        // Get stats before VACUUM
+        DatabaseStats beforeStats = dbtGetDatabaseStats();
+
+        char* errMsg = nullptr;
+        int result = sqlite3_exec(db, "VACUUM;", nullptr, nullptr, &errMsg);
+
+        if (result != SQLITE_OK) {
+            std::string error = errMsg ? std::string(errMsg) : "Unknown error";
+            debugOutput("VACUUM failed: " + error);
+            if (errMsg) sqlite3_free(errMsg);
+            return false;
+        }
+
+        // Get stats after VACUUM
+        DatabaseStats afterStats = dbtGetDatabaseStats();
+
+        int64_t spaceSaved = beforeStats.fileSizeBytes - afterStats.fileSizeBytes;
+        debugOutput("VACUUM completed successfully! Space saved: " + std::to_string(spaceSaved) + " bytes");
+        debugOutput("Before: " + std::to_string(beforeStats.fileSizeBytes) + " bytes, After: " + std::to_string(afterStats.fileSizeBytes) + " bytes");
+
+        return true;
+    }
+
+    // Database tools: Find large BLOBs in a table
+    std::vector<std::pair<std::string, int>> dbtFindLargeBlobsInTable(const std::string& tableName, int minSizeBytes) {
+        if (!db) {
+            debugOutput("No database connection available.");
+            return {};
+        }
+
+        if (minSizeBytes <= 0) {
+            debugOutput("Invalid minimum size: " + std::to_string(minSizeBytes));
+            return {};
+        }
+
+        // Build query to find BLOBs larger than minSizeBytes
+        std::string sql = "SELECT id, LENGTH(value) as blob_size FROM \"" + tableName +
+                         "\" WHERE LENGTH(value) > ? ORDER BY blob_size DESC;";
+
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            debugOutput("Failed to prepare large BLOB query for " + tableName + ": " + std::string(sqlite3_errmsg(db)));
+            return {};
+        }
+
+        // Bind the minimum size parameter
+        sqlite3_bind_int(stmt, 1, minSizeBytes);
+
+        std::vector<std::pair<std::string, int>> results;
+
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            const char* id = (const char*)sqlite3_column_text(stmt, 0);
+            int blobSize = sqlite3_column_int(stmt, 1);
+
+            if (id) {
+                results.push_back({ std::string(id), blobSize });
+            }
+        }
+
+        sqlite3_finalize(stmt);
+
+        debugOutput("Found " + std::to_string(results.size()) + " large BLOBs in " +
+                   tableName + " over " + std::to_string(minSizeBytes) + " bytes");
+
+        return results;
+    }
+
     // Search entries by title with pagination
     std::vector<std::pair<std::string, std::string>> getFirstSearchResults(const std::string& entryType, const std::string& searchTerm, int count = 50) {
         if (!prepareSearchQuery(entryType, searchTerm)) {

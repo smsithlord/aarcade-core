@@ -90,6 +90,60 @@
             max-width: 600px;
             margin: 0 auto;
         }
+
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin: 40px 0;
+        }
+
+        .tool-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 30px;
+            text-decoration: none;
+            color: #333;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            display: block;
+        }
+
+        .tool-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.2);
+            transform: translateY(-5px);
+        }
+
+        .tool-card.coming-soon {
+            opacity: 0.6;
+            cursor: default;
+        }
+
+        .tool-card.coming-soon:hover {
+            transform: none;
+            border-color: #e0e0e0;
+            box-shadow: none;
+        }
+
+        .tool-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .tool-card h3 {
+            font-size: 20px;
+            margin: 10px 0;
+            color: #333;
+        }
+
+        .tool-card p {
+            font-size: 14px;
+            color: #666;
+            margin: 0;
+            line-height: 1.5;
+        }
     </style>
 </head>
 <body>
@@ -104,11 +158,29 @@
             <h1>🔧 Database Tools</h1>
             <p class="subtitle">Advanced Database Management & Utilities</p>
 
-            <div class="coming-soon">COMING SOON</div>
+            <div class="tools-grid">
+                <a href="detect-large-entries.html" class="tool-card">
+                    <div class="tool-icon">🔍</div>
+                    <h3>Detect Large Entries</h3>
+                    <p>Find oversized BLOB entries in database tables for optimization and cleanup</p>
+                </a>
+
+                <a href="compact-database.html" class="tool-card">
+                    <div class="tool-icon">🗜️</div>
+                    <h3>Compact Database</h3>
+                    <p>Reclaim disk space by compacting the database file (VACUUM operation)</p>
+                </a>
+
+                <div class="tool-card coming-soon">
+                    <div class="tool-icon">⚙️</div>
+                    <h3>More Tools</h3>
+                    <p>Additional database utilities coming soon</p>
+                </div>
+            </div>
 
             <div class="description">
-                <p>This section will feature powerful database management tools and utilities to help you maintain and optimize your gaming database.</p>
-                <p>Stay tuned for updates!</p>
+                <p>These tools help you maintain and optimize your gaming database.</p>
+                <p>More utilities will be added in future updates!</p>
             </div>
         </div>
     </div>

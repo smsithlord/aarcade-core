@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compact Database - Database Tools</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+
+        .page-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+            min-height: calc(100vh - 40px);
+        }
+
+        .breadcrumbs {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 12px 20px;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.1);
+            font-size: 14px;
+        }
+
+        .breadcrumbs a {
+            color: #667eea;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .breadcrumbs a:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+
+        .breadcrumbs .separator {
+            margin: 0 8px;
+            color: #999;
+        }
+
+        .breadcrumbs .current {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            min-width: 700px;
+            max-width: 900px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+
+        .stats-box {
+            background: #f9f9f9;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: left;
+        }
+
+        .stats-title {
+            font-weight: bold;
+            font-size: 16px;
+            color: #333;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+
+        .stat-label {
+            font-weight: 600;
+            color: #666;
+        }
+
+        .stat-value {
+            color: #333;
+            font-family: 'Courier New', monospace;
+        }
+
+        .entry-button {
+            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(68, 160, 141, 0.3);
+            margin: 10px;
+        }
+
+        .entry-button:hover {
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .entry-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .compact-button {
+            background: linear-gradient(45deg, #f39c12, #e67e22);
+            box-shadow: 0 4px 15px rgba(230, 126, 34, 0.3);
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+            min-height: 20px;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.running {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 4px solid #2196f3;
+        }
+
+        .info p {
+            margin: 5px 0;
+            color: #1565c0;
+            font-size: 14px;
+            text-align: left;
+        }
+
+        .warning-box {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #ffc107;
+        }
+
+        .warning-box p {
+            margin: 5px 0;
+            color: #856404;
+            font-size: 14px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <nav class="breadcrumbs">
+        <a href="welcome.html">Home</a>
+        <span class="separator">/</span>
+        <a href="database-tools.html">Database Tools</a>
+        <span class="separator">/</span>
+        <span class="current">Compact Database</span>
+    </nav>
+
+    <div class="page-wrapper">
+        <div class="container">
+            <h1>🗜️ Compact Database</h1>
+            <p class="subtitle">Reclaim disk space by compacting the database</p>
+
+            <div class="stats-box">
+                <div class="stats-title">📊 Current Database Statistics</div>
+                <div class="stat-row">
+                    <span class="stat-label">File Size:</span>
+                    <span class="stat-value" id="fileSizeValue">Loading...</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Total Pages:</span>
+                    <span class="stat-value" id="pageCountValue">-</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Free Pages:</span>
+                    <span class="stat-value" id="freePagesValue">-</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Fragmentation:</span>
+                    <span class="stat-value" id="fragmentationValue">-</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Estimated Reclaimable:</span>
+                    <span class="stat-value" id="reclaimableValue">-</span>
+                </div>
+            </div>
+
+            <button class="entry-button" onclick="refreshStats()">
+                🔄 Refresh Statistics
+            </button>
+
+            <button class="entry-button compact-button" id="compactButton" onclick="console.log('[BUTTON] Compact button clicked!'); compactDatabase();">
+                🗜️ Compact Database Now
+            </button>
+
+            <div id="status" class="status"></div>
+
+            <!-- Confirmation Modal -->
+            <div id="confirmationModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+                <div style="background: white; padding: 30px; border-radius: 10px; max-width: 500px; box-shadow: 0 10px 40px rgba(0,0,0,0.3);">
+                    <h2 style="margin-top: 0; color: #333;">Confirm Database Compaction</h2>
+                    <p id="confirmationMessage" style="color: #666; line-height: 1.6;"></p>
+                    <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                        <button onclick="cancelCompaction()" style="padding: 10px 20px; background: #ccc; border: none; border-radius: 5px; cursor: pointer; font-size: 14px;">
+                            Cancel
+                        </button>
+                        <button onclick="proceedWithCompaction()" style="padding: 10px 20px; background: linear-gradient(45deg, #f39c12, #e67e22); color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                            Compact Now
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="warning-box">
+                <p><strong>⚠️ Important Notes:</strong></p>
+                <p>• The VACUUM operation will temporarily require additional disk space (up to 2x current database size)</p>
+                <p>• The database will be locked during the operation (application may be unresponsive)</p>
+                <p>• This operation is safe and will not delete any data</p>
+                <p>• Run this after deleting or trimming large amounts of data</p>
+            </div>
+
+            <div class="info">
+                <p><strong>ℹ️ What is Database Compaction?</strong></p>
+                <p>• SQLite doesn't automatically reclaim disk space when data is deleted or trimmed</p>
+                <p>• Free space is kept for future use but doesn't reduce file size</p>
+                <p>• The VACUUM command rebuilds the database file and reclaims unused space</p>
+                <p>• This is similar to "defragmentation" for databases</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global error handler
+        window.onerror = function(message, source, lineno, colno, error) {
+            console.error('[GLOBAL ERROR]', message, 'at', source, lineno + ':' + colno);
+            console.error('[GLOBAL ERROR] Stack:', error ? error.stack : 'no stack');
+            return false;
+        };
+
+        let currentStats = null;
+
+        function refreshStats() {
+            showRunning('🔄 Fetching database statistics...');
+
+            try {
+                console.log('[refreshStats] Calling aapi.dbtGetDatabaseStats()...');
+                const stats = aapi.dbtGetDatabaseStats();
+                console.log('[refreshStats] Received stats:', stats);
+                currentStats = stats;
+                displayStats(stats);
+                showSuccess('✅ Statistics refreshed!');
+            } catch (error) {
+                showError('❌ Error fetching statistics: ' + error.message);
+                console.error('Stats error:', error);
+            }
+        }
+
+        function displayStats(stats) {
+            console.log('[displayStats] Called with stats:', stats);
+            console.log('[displayStats] Fragmentation percent: ' + stats.fragmentationPercent);
+            console.log('[displayStats] Fragmentation type: ' + typeof stats.fragmentationPercent);
+            console.log('[displayStats] Free pages: ' + stats.freePages);
+            console.log('[displayStats] Page count: ' + stats.pageCount);
+            console.log('[displayStats] File size: ' + stats.fileSizeBytes);
+
+            // File size
+            const fileSizeMB = (stats.fileSizeBytes / (1024 * 1024)).toFixed(2);
+            document.getElementById('fileSizeValue').textContent =
+                `${fileSizeMB} MB (${stats.fileSizeBytes.toLocaleString()} bytes)`;
+
+            // Page count
+            document.getElementById('pageCountValue').textContent =
+                stats.pageCount.toLocaleString();
+
+            // Free pages
+            document.getElementById('freePagesValue').textContent =
+                `${stats.freePages.toLocaleString()} pages`;
+
+            // Fragmentation
+            const fragColor = stats.fragmentationPercent > 10 ? '#e67e22' : '#27ae60';
+            document.getElementById('fragmentationValue').innerHTML =
+                `<span style="color: ${fragColor}; font-weight: bold;">${stats.fragmentationPercent.toFixed(2)}%</span>`;
+
+            // Estimated reclaimable
+            const reclaimableBytes = stats.freePages * stats.pageSize;
+            const reclaimableMB = (reclaimableBytes / (1024 * 1024)).toFixed(2);
+            document.getElementById('reclaimableValue').textContent =
+                `${reclaimableMB} MB (${reclaimableBytes.toLocaleString()} bytes)`;
+
+            // Enable compact button if there's space to reclaim
+            const compactButton = document.getElementById('compactButton');
+            console.log('[displayStats] Button element found:', compactButton);
+            console.log('[displayStats] Button disabled before:', compactButton ? compactButton.disabled : 'BUTTON NOT FOUND');
+
+            if (stats.fragmentationPercent > 0.1) {
+                console.log('[displayStats] Fragmentation > 0.1%, enabling button');
+                compactButton.disabled = false;
+            } else {
+                console.log('[displayStats] Fragmentation <= 0.1%, disabling button');
+                compactButton.disabled = true;
+            }
+
+            console.log('[displayStats] Button disabled after:', compactButton.disabled);
+        }
+
+        function compactDatabase() {
+            console.log('[compactDatabase] Function called!');
+            console.log('[compactDatabase] currentStats:', currentStats);
+            console.log('[compactDatabase] currentStats type: ' + typeof currentStats);
+            console.log('[compactDatabase] currentStats is null? ' + (currentStats === null));
+            console.log('[compactDatabase] currentStats is undefined? ' + (currentStats === undefined));
+
+            if (!currentStats) {
+                console.log('[compactDatabase] No currentStats available');
+                showError('❌ Please refresh statistics first');
+                return;
+            }
+
+            console.log('[compactDatabase] Fragmentation: ' + currentStats.fragmentationPercent);
+            console.log('[compactDatabase] Free pages: ' + currentStats.freePages);
+            if (currentStats.fragmentationPercent < 0.1) {
+                console.log('[compactDatabase] Fragmentation too low, aborting');
+                showError('❌ Database has minimal fragmentation. Compaction not needed.');
+                return;
+            }
+
+            // Show custom confirmation modal
+            const reclaimableBytes = currentStats.freePages * currentStats.pageSize;
+            const reclaimableMB = (reclaimableBytes / (1024 * 1024)).toFixed(2);
+
+            console.log('[compactDatabase] Showing custom confirmation modal...');
+
+            const message = `This will compact the database and potentially reclaim ${reclaimableMB} MB.\n\n` +
+                          `The operation may take a minute and the application will be unresponsive.\n\n` +
+                          `Continue?`;
+
+            document.getElementById('confirmationMessage').textContent = message;
+            document.getElementById('confirmationModal').style.display = 'flex';
+        }
+
+        function cancelCompaction() {
+            console.log('[cancelCompaction] User cancelled compaction');
+            document.getElementById('confirmationModal').style.display = 'none';
+        }
+
+        function proceedWithCompaction() {
+            console.log('[proceedWithCompaction] User confirmed, starting compaction...');
+            document.getElementById('confirmationModal').style.display = 'none';
+
+            showRunning('🗜️ Compacting database... This may take a moment. Please wait...');
+
+            // Disable button during operation
+            const compactButton = document.getElementById('compactButton');
+            compactButton.disabled = true;
+
+            // Use setTimeout to allow UI to update before blocking operation
+            setTimeout(() => {
+                try {
+                    const result = aapi.dbtCompactDatabase();
+
+                    if (result.success) {
+                        const savedMB = (result.spaceSavedBytes / (1024 * 1024)).toFixed(2);
+                        const beforeMB = (result.beforeSizeBytes / (1024 * 1024)).toFixed(2);
+                        const afterMB = (result.afterSizeBytes / (1024 * 1024)).toFixed(2);
+
+                        showSuccess(
+                            `✅ Database compacted successfully!\n` +
+                            `Before: ${beforeMB} MB → After: ${afterMB} MB\n` +
+                            `Space saved: ${savedMB} MB`
+                        );
+
+                        // Refresh stats to show new values
+                        setTimeout(() => refreshStats(), 1000);
+                    } else {
+                        showError(`❌ Compaction failed: ${result.error}`);
+                        compactButton.disabled = false;
+                    }
+
+                    console.log('Compact result:', result);
+                } catch (error) {
+                    showError('❌ Error compacting database: ' + error.message);
+                    console.error('Compact error:', error);
+                    compactButton.disabled = false;
+                }
+            }, 100);
+        }
+
+        // Status display functions
+        function showRunning(message) {
+            const status = document.getElementById('status');
+            status.className = 'status running';
+            status.textContent = message;
+        }
+
+        function showSuccess(message) {
+            const status = document.getElementById('status');
+            status.className = 'status success';
+            status.textContent = message;
+        }
+
+        function showError(message) {
+            const status = document.getElementById('status');
+            status.className = 'status error';
+            status.textContent = message;
+        }
+
+        // Initialize on load
+        window.addEventListener('load', function() {
+            showSuccess('🟢 Ready to compact database');
+            // Auto-load stats on startup
+            refreshStats();
+        });
+    </script>
+</body>
+</html>
