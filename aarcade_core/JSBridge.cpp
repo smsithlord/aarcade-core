@@ -204,6 +204,15 @@ JSValueRef dbtRemoveAnomalousKeysCallback(JSContextRef ctx, JSObjectRef function
     return JSValueMakeNull(ctx);
 }
 
+JSValueRef dbtMergeDatabaseCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    JSBridge* bridge = JSBridge::getInstance();
+    if (bridge) {
+        return bridge->dbtMergeDatabase(ctx, function, thisObject, argumentCount, arguments, exception);
+    }
+    return JSValueMakeNull(ctx);
+}
+
 JSBridge::JSBridge(SQLiteManager* dbManager, ArcadeConfig* config, Library* library)
     : dbManager_(dbManager), config_(config), library_(library), renderer_(nullptr), app_(nullptr), imageLoader_(nullptr) {
     // Set this as the global instance
@@ -363,6 +372,11 @@ void JSBridge::setupJavaScriptBridge(View* view, uint64_t frame_id, bool is_main
 
     methodName = JSStringCreateWithUTF8CString("dbtRemoveAnomalousKeys");
     methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, dbtRemoveAnomalousKeysCallback);
+    JSObjectSetProperty(ctx, aapiObj, methodName, methodFunc, 0, 0);
+    JSStringRelease(methodName);
+
+    methodName = JSStringCreateWithUTF8CString("dbtMergeDatabase");
+    methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, dbtMergeDatabaseCallback);
     JSObjectSetProperty(ctx, aapiObj, methodName, methodFunc, 0, 0);
     JSStringRelease(methodName);
 
@@ -1380,6 +1394,146 @@ JSValueRef JSBridge::dbtRemoveAnomalousKeys(JSContextRef ctx, JSObjectRef functi
     }
 
     return resultsArray;
+}
+
+JSValueRef JSBridge::dbtMergeDatabase(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    OutputDebugStringA("[JSBridge] dbtMergeDatabase called from JavaScript\n");
+
+    if (argumentCount < 4) {
+        OutputDebugStringA("[JSBridge] dbtMergeDatabase: Missing parameters (sourcePath, tableName, skipExisting, overwriteIfLarger)\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    // Extract sourcePath (string)
+    JSStringRef sourcePathStr = JSValueToStringCopy(ctx, arguments[0], exception);
+    if (!sourcePathStr) {
+        OutputDebugStringA("[JSBridge] dbtMergeDatabase: Invalid sourcePath parameter\n");
+        return JSValueMakeNull(ctx);
+    }
+    size_t sourcePathLength = JSStringGetMaximumUTF8CStringSize(sourcePathStr);
+    char* sourcePathBuffer = new char[sourcePathLength];
+    JSStringGetUTF8CString(sourcePathStr, sourcePathBuffer, sourcePathLength);
+    std::string sourcePath(sourcePathBuffer);
+    delete[] sourcePathBuffer;
+    JSStringRelease(sourcePathStr);
+
+    // Extract tableName (string)
+    JSStringRef tableNameStr = JSValueToStringCopy(ctx, arguments[1], exception);
+    if (!tableNameStr) {
+        OutputDebugStringA("[JSBridge] dbtMergeDatabase: Invalid tableName parameter\n");
+        return JSValueMakeNull(ctx);
+    }
+    size_t tableNameLength = JSStringGetMaximumUTF8CStringSize(tableNameStr);
+    char* tableNameBuffer = new char[tableNameLength];
+    JSStringGetUTF8CString(tableNameStr, tableNameBuffer, tableNameLength);
+    std::string tableName(tableNameBuffer);
+    delete[] tableNameBuffer;
+    JSStringRelease(tableNameStr);
+
+    // Extract skipExisting (boolean)
+    bool skipExisting = JSValueToBoolean(ctx, arguments[2]);
+
+    // Extract overwriteIfLarger (boolean)
+    bool overwriteIfLarger = JSValueToBoolean(ctx, arguments[3]);
+
+    OutputDebugStringA(("[JSBridge] Merging database: source=" + sourcePath + ", table=" + tableName +
+                       ", skipExisting=" + (skipExisting ? "true" : "false") +
+                       ", overwriteIfLarger=" + (overwriteIfLarger ? "true" : "false") + "\n").c_str());
+
+    // Call Library method
+    Library::MergeResult result = library_->dbtMergeDatabase(sourcePath, tableName, skipExisting, overwriteIfLarger);
+
+    OutputDebugStringA(("[JSBridge] Merge operation completed: success=" + std::string(result.success ? "true" : "false") +
+                       ", total=" + std::to_string(result.totalEntries) +
+                       ", merged=" + std::to_string(result.mergedCount) +
+                       ", skipped=" + std::to_string(result.skippedCount) +
+                       ", overwritten=" + std::to_string(result.overwrittenCount) +
+                       ", failed=" + std::to_string(result.failedCount) + "\n").c_str());
+
+    // Convert result to JavaScript object
+    JSObjectRef resultObj = JSObjectMake(ctx, nullptr, nullptr);
+
+    // Set success property
+    JSStringRef successKey = JSStringCreateWithUTF8CString("success");
+    JSObjectSetProperty(ctx, resultObj, successKey, JSValueMakeBoolean(ctx, result.success), 0, nullptr);
+    JSStringRelease(successKey);
+
+    // Set error property
+    JSStringRef errorKey = JSStringCreateWithUTF8CString("error");
+    JSStringRef errorValue = JSStringCreateWithUTF8CString(result.error.c_str());
+    JSObjectSetProperty(ctx, resultObj, errorKey, JSValueMakeString(ctx, errorValue), 0, nullptr);
+    JSStringRelease(errorKey);
+    JSStringRelease(errorValue);
+
+    // Set totalEntries property
+    JSStringRef totalKey = JSStringCreateWithUTF8CString("totalEntries");
+    JSObjectSetProperty(ctx, resultObj, totalKey, JSValueMakeNumber(ctx, result.totalEntries), 0, nullptr);
+    JSStringRelease(totalKey);
+
+    // Set mergedCount property
+    JSStringRef mergedKey = JSStringCreateWithUTF8CString("mergedCount");
+    JSObjectSetProperty(ctx, resultObj, mergedKey, JSValueMakeNumber(ctx, result.mergedCount), 0, nullptr);
+    JSStringRelease(mergedKey);
+
+    // Set skippedCount property
+    JSStringRef skippedKey = JSStringCreateWithUTF8CString("skippedCount");
+    JSObjectSetProperty(ctx, resultObj, skippedKey, JSValueMakeNumber(ctx, result.skippedCount), 0, nullptr);
+    JSStringRelease(skippedKey);
+
+    // Set overwrittenCount property
+    JSStringRef overwrittenKey = JSStringCreateWithUTF8CString("overwrittenCount");
+    JSObjectSetProperty(ctx, resultObj, overwrittenKey, JSValueMakeNumber(ctx, result.overwrittenCount), 0, nullptr);
+    JSStringRelease(overwrittenKey);
+
+    // Set failedCount property
+    JSStringRef failedKey = JSStringCreateWithUTF8CString("failedCount");
+    JSObjectSetProperty(ctx, resultObj, failedKey, JSValueMakeNumber(ctx, result.failedCount), 0, nullptr);
+    JSStringRelease(failedKey);
+
+    // Convert entries vector to JavaScript array
+    JSObjectRef entriesArray = JSObjectMakeArray(ctx, 0, nullptr, nullptr);
+    for (size_t i = 0; i < result.entries.size(); i++) {
+        const auto& entry = result.entries[i];
+
+        JSObjectRef entryObj = JSObjectMake(ctx, nullptr, nullptr);
+
+        // Set id property
+        JSStringRef idKey = JSStringCreateWithUTF8CString("id");
+        JSStringRef idValue = JSStringCreateWithUTF8CString(entry.id.c_str());
+        JSObjectSetProperty(ctx, entryObj, idKey, JSValueMakeString(ctx, idValue), 0, nullptr);
+        JSStringRelease(idKey);
+        JSStringRelease(idValue);
+
+        // Set action property
+        JSStringRef actionKey = JSStringCreateWithUTF8CString("action");
+        JSStringRef actionValue = JSStringCreateWithUTF8CString(entry.action.c_str());
+        JSObjectSetProperty(ctx, entryObj, actionKey, JSValueMakeString(ctx, actionValue), 0, nullptr);
+        JSStringRelease(actionKey);
+        JSStringRelease(actionValue);
+
+        // Set error property
+        JSStringRef entryErrorKey = JSStringCreateWithUTF8CString("error");
+        JSStringRef entryErrorValue = JSStringCreateWithUTF8CString(entry.error.c_str());
+        JSObjectSetProperty(ctx, entryObj, entryErrorKey, JSValueMakeString(ctx, entryErrorValue), 0, nullptr);
+        JSStringRelease(entryErrorKey);
+        JSStringRelease(entryErrorValue);
+
+        // Set blobSizeBytes property
+        JSStringRef sizeKey = JSStringCreateWithUTF8CString("blobSizeBytes");
+        JSObjectSetProperty(ctx, entryObj, sizeKey, JSValueMakeNumber(ctx, entry.blobSizeBytes), 0, nullptr);
+        JSStringRelease(sizeKey);
+
+        // Add to entries array
+        JSObjectSetPropertyAtIndex(ctx, entriesArray, i, entryObj, nullptr);
+    }
+
+    // Set entries property
+    JSStringRef entriesKey = JSStringCreateWithUTF8CString("entries");
+    JSObjectSetProperty(ctx, resultObj, entriesKey, entriesArray, 0, nullptr);
+    JSStringRelease(entriesKey);
+
+    return resultObj;
 }
 
 // Setup JS bridge for image loader view

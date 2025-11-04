@@ -118,6 +118,9 @@ public:
     JSValueRef dbtRemoveAnomalousKeys(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
         size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 
+    JSValueRef dbtMergeDatabase(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+        size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
+
     // Helper functions
     JSObjectRef arcadeKeyValuesToJSObject(JSContextRef ctx, const ArcadeKeyValues* kv);
     JSObjectRef entryDataToJSObject(JSContextRef ctx, const std::string& entryId, const std::string& hexData);
@@ -170,6 +173,9 @@ JSValueRef onImageLoaderReadyCallback(JSContextRef ctx, JSObjectRef function, JS
     size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 
 JSValueRef quitApplicationCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
+
+JSValueRef dbtMergeDatabaseCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
     size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 
 #endif

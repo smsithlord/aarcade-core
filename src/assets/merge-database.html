@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Merge Database - Database Tools</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+
+        .page-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+            min-height: calc(100vh - 40px);
+        }
+
+        .breadcrumbs {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 12px 20px;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.1);
+            font-size: 14px;
+        }
+
+        .breadcrumbs a {
+            color: #667eea;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .breadcrumbs a:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+
+        .breadcrumbs .separator {
+            margin: 0 8px;
+            color: #999;
+        }
+
+        .breadcrumbs .current {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            min-width: 800px;
+            max-width: 1000px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+            text-align: center;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+            text-align: center;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .form-group input[type="text"],
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            box-sizing: border-box;
+            font-family: 'Courier New', monospace;
+        }
+
+        .form-group input[type="text"]:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .radio-group {
+            margin-top: 10px;
+        }
+
+        .radio-group label {
+            display: block;
+            padding: 10px;
+            margin-bottom: 8px;
+            background: #f9f9f9;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .radio-group input[type="radio"] {
+            margin-right: 10px;
+        }
+
+        .radio-group label:hover {
+            background: #f0f0f0;
+            border-color: #667eea;
+        }
+
+        .radio-group input[type="radio"]:checked + span {
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .entry-button {
+            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(68, 160, 141, 0.3);
+            margin: 10px;
+            width: 100%;
+        }
+
+        .entry-button:hover {
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .entry-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+            min-height: 20px;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.running {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .results-summary {
+            background: #f9f9f9;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: left;
+        }
+
+        .summary-title {
+            font-weight: bold;
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .summary-row:last-child {
+            border-bottom: none;
+        }
+
+        .summary-label {
+            font-weight: 600;
+            color: #666;
+        }
+
+        .summary-value {
+            color: #333;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+        }
+
+        .summary-value.merged { color: #27ae60; }
+        .summary-value.skipped { color: #3498db; }
+        .summary-value.overwritten { color: #e67e22; }
+        .summary-value.failed { color: #e74c3c; }
+
+        .results-table {
+            margin-top: 20px;
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .results-table th {
+            background: #667eea;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .results-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .results-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .results-table tr:hover {
+            background: #f9f9f9;
+        }
+
+        .action-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .action-badge.merged { background: #d4edda; color: #155724; }
+        .action-badge.skipped { background: #d1ecf1; color: #0c5460; }
+        .action-badge.overwritten { background: #fff3cd; color: #856404; }
+        .action-badge.failed { background: #f8d7da; color: #721c24; }
+
+        .warning-box {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #ffc107;
+        }
+
+        .warning-box p {
+            margin: 5px 0;
+            color: #856404;
+            font-size: 14px;
+            text-align: left;
+        }
+
+        .info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 4px solid #2196f3;
+        }
+
+        .info p {
+            margin: 5px 0;
+            color: #1565c0;
+            font-size: 14px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <nav class="breadcrumbs">
+        <a href="welcome.html">Home</a>
+        <span class="separator">/</span>
+        <a href="database-tools.html">Database Tools</a>
+        <span class="separator">/</span>
+        <span class="current">Merge Database</span>
+    </nav>
+
+    <div class="page-wrapper">
+        <div class="container">
+            <h1>🔀 Merge Database</h1>
+            <p class="subtitle">Merge entries from another database file into your library</p>
+
+            <div class="warning-box">
+                <p><strong>⚠️ Important:</strong> Always back up your library.db before performing merge operations!</p>
+            </div>
+
+            <div class="form-group">
+                <label for="sourcePath">Source Database Path:</label>
+                <input type="text" id="sourcePath" placeholder="G:\path\to\source\library.db">
+            </div>
+
+            <div class="form-group">
+                <label for="tableName">Table to Merge:</label>
+                <select id="tableName">
+                    <option value="all">🔀 Merge All Tables</option>
+                    <option value="items">Items</option>
+                    <option value="apps">Apps</option>
+                    <option value="instances">Instances</option>
+                    <option value="maps">Maps</option>
+                    <option value="models">Models</option>
+                    <option value="platforms">Platforms</option>
+                    <option value="types">Types</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Merge Strategy:</label>
+                <div class="radio-group">
+                    <label>
+                        <input type="radio" name="strategy" value="skip" checked>
+                        <span>Skip existing entries (safest - only add new entries)</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="strategy" value="overwriteAll">
+                        <span>Overwrite all existing entries (replace with source data)</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="strategy" value="overwriteLarger">
+                        <span>Overwrite only if source blob is larger (keep highest quality data)</span>
+                    </label>
+                </div>
+            </div>
+
+            <button class="entry-button" onclick="mergeDatabase()">
+                🔀 Merge Database
+            </button>
+
+            <div id="status" class="status"></div>
+
+            <div id="resultsSummary" style="display: none;">
+                <div class="results-summary">
+                    <div class="summary-title">📊 Merge Results</div>
+                    <div class="summary-row">
+                        <span class="summary-label">Total Entries Processed:</span>
+                        <span class="summary-value" id="totalEntries">0</span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">Merged (New):</span>
+                        <span class="summary-value merged" id="mergedCount">0</span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">Skipped (Existing):</span>
+                        <span class="summary-value skipped" id="skippedCount">0</span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">Overwritten:</span>
+                        <span class="summary-value overwritten" id="overwrittenCount">0</span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="summary-label">Failed:</span>
+                        <span class="summary-value failed" id="failedCount">0</span>
+                    </div>
+                </div>
+
+                <table class="results-table" id="resultsTable">
+                    <thead>
+                        <tr>
+                            <th>Entry ID</th>
+                            <th>Action</th>
+                            <th>Blob Size</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody">
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="info">
+                <p><strong>ℹ️ How Database Merging Works:</strong></p>
+                <p>• Reads all entries from the specified table in the source database</p>
+                <p>• Compares entry IDs with your current library.db</p>
+                <p>• Applies the selected merge strategy for each entry</p>
+                <p>• Works with raw blob data (no KeyValues parsing required)</p>
+                <p>• Safe operation - no data is deleted from either database</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function mergeDatabase() {
+            const sourcePath = document.getElementById('sourcePath').value.trim();
+            const tableName = document.getElementById('tableName').value;
+            const strategy = document.querySelector('input[name="strategy"]:checked').value;
+
+            if (!sourcePath) {
+                showError('❌ Please enter a source database path');
+                return;
+            }
+
+            // Determine boolean flags based on strategy
+            let skipExisting = true;
+            let overwriteIfLarger = false;
+
+            if (strategy === 'overwriteAll') {
+                skipExisting = false;
+                overwriteIfLarger = false;
+            } else if (strategy === 'overwriteLarger') {
+                skipExisting = false;
+                overwriteIfLarger = true;
+            }
+
+            // Handle "Merge All Tables" option
+            if (tableName === 'all') {
+                mergeAllTables(sourcePath, skipExisting, overwriteIfLarger);
+                return;
+            }
+
+            showRunning('🔀 Merging database... This may take a moment. Please wait...');
+
+            // Use setTimeout to allow UI to update before blocking operation
+            setTimeout(() => {
+                try {
+                    console.log('Calling aapi.dbtMergeDatabase with:', {
+                        sourcePath,
+                        tableName,
+                        skipExisting,
+                        overwriteIfLarger
+                    });
+
+                    const result = aapi.dbtMergeDatabase(sourcePath, tableName, skipExisting, overwriteIfLarger);
+
+                    console.log('Merge result:', result);
+
+                    if (result.success) {
+                        showSuccess(`✅ Merge completed! Processed ${result.totalEntries} entries.`);
+                        displayResults(result);
+                    } else {
+                        showError(`❌ Merge failed: ${result.error}`);
+                    }
+                } catch (error) {
+                    showError('❌ Error merging database: ' + error.message);
+                    console.error('Merge error:', error);
+                }
+            }, 100);
+        }
+
+        function displayResults(result) {
+            // Show summary
+            document.getElementById('resultsSummary').style.display = 'block';
+            document.getElementById('totalEntries').textContent = result.totalEntries;
+            document.getElementById('mergedCount').textContent = result.mergedCount;
+            document.getElementById('skippedCount').textContent = result.skippedCount;
+            document.getElementById('overwrittenCount').textContent = result.overwrittenCount;
+            document.getElementById('failedCount').textContent = result.failedCount;
+
+            // Populate results table
+            const tbody = document.getElementById('resultsBody');
+            tbody.innerHTML = '';
+
+            result.entries.forEach(entry => {
+                const row = document.createElement('tr');
+
+                const idCell = document.createElement('td');
+                // If tableName exists (from merge all tables), show it with the ID
+                if (entry.tableName) {
+                    idCell.innerHTML = `<span style="color: #999; font-size: 11px;">[${entry.tableName}]</span><br>${entry.id}`;
+                } else {
+                    idCell.textContent = entry.id;
+                }
+                row.appendChild(idCell);
+
+                const actionCell = document.createElement('td');
+                const badge = document.createElement('span');
+                badge.className = `action-badge ${entry.action}`;
+                badge.textContent = entry.action;
+                actionCell.appendChild(badge);
+                row.appendChild(actionCell);
+
+                const sizeCell = document.createElement('td');
+                sizeCell.textContent = `${entry.blobSizeBytes.toLocaleString()} bytes`;
+                sizeCell.style.fontFamily = "'Courier New', monospace";
+                row.appendChild(sizeCell);
+
+                const errorCell = document.createElement('td');
+                errorCell.textContent = entry.error || '-';
+                errorCell.style.color = entry.error ? '#e74c3c' : '#999';
+                errorCell.style.fontSize = '12px';
+                row.appendChild(errorCell);
+
+                tbody.appendChild(row);
+            });
+
+            // Scroll to results
+            document.getElementById('resultsSummary').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function mergeAllTables(sourcePath, skipExisting, overwriteIfLarger) {
+            const allTables = ['items', 'apps', 'instances', 'maps', 'models', 'platforms', 'types'];
+
+            showRunning('🔀 Merging all tables... This may take several minutes. Please wait...');
+
+            // Use setTimeout to allow UI to update before blocking operation
+            setTimeout(() => {
+                try {
+                    let combinedResult = {
+                        success: true,
+                        error: '',
+                        totalEntries: 0,
+                        mergedCount: 0,
+                        skippedCount: 0,
+                        overwrittenCount: 0,
+                        failedCount: 0,
+                        entries: []
+                    };
+
+                    for (const tableName of allTables) {
+                        console.log(`Merging table: ${tableName}`);
+
+                        const result = aapi.dbtMergeDatabase(sourcePath, tableName, skipExisting, overwriteIfLarger);
+
+                        if (!result.success) {
+                            showError(`❌ Failed to merge table "${tableName}": ${result.error}`);
+                            return;
+                        }
+
+                        // Accumulate results and add table name to each entry
+                        combinedResult.totalEntries += result.totalEntries;
+                        combinedResult.mergedCount += result.mergedCount;
+                        combinedResult.skippedCount += result.skippedCount;
+                        combinedResult.overwrittenCount += result.overwrittenCount;
+                        combinedResult.failedCount += result.failedCount;
+
+                        // Add table name to each entry for display
+                        result.entries.forEach(entry => {
+                            entry.tableName = tableName;
+                            combinedResult.entries.push(entry);
+                        });
+                    }
+
+                    showSuccess(`✅ All tables merged! Processed ${combinedResult.totalEntries} entries across ${allTables.length} tables.`);
+                    displayResults(combinedResult);
+
+                } catch (error) {
+                    showError('❌ Error merging all tables: ' + error.message);
+                    console.error('Merge all tables error:', error);
+                }
+            }, 100);
+        }
+
+        function showRunning(message) {
+            const status = document.getElementById('status');
+            status.className = 'status running';
+            status.textContent = message;
+        }
+
+        function showSuccess(message) {
+            const status = document.getElementById('status');
+            status.className = 'status success';
+            status.textContent = message;
+        }
+
+        function showError(message) {
+            const status = document.getElementById('status');
+            status.className = 'status error';
+            status.textContent = message;
+        }
+
+        // Initialize on load
+        window.addEventListener('load', function() {
+            showSuccess('🟢 Ready to merge database');
+        });
+    </script>
+</body>
+</html>

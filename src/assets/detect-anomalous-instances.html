@@ -386,8 +386,8 @@
                 row.innerHTML = `
                     <td onclick="event.stopPropagation()"><input type="checkbox" class="entry-checkbox" data-index="${index}"></td>
                     <td onclick="showInstanceKeyValues('${escapeHtml(entry.id)}')">${escapeHtml(entry.id)}</td>
-                    <td onclick="showInstanceKeyValues('${escapeHtml(entry.id)}')">${escapeHtml(entry.generation || '')}</td>
-                    <td onclick="showInstanceKeyValues('${escapeHtml(entry.id)}')">${escapeHtml(entry.legacy || '')}</td>
+                    <td onclick="showInstanceKeyValues('${escapeHtml(entry.id)}')">${entry.generation >= 0 ? entry.generation : '-'}</td>
+                    <td onclick="showInstanceKeyValues('${escapeHtml(entry.id)}')">${entry.legacy >= 0 ? entry.legacy : '-'}</td>
                     <td onclick="showInstanceKeyValues('${escapeHtml(entry.id)}')">${entry.unexpectedKeys.map(k => escapeHtml(k)).join(', ')}</td>
                     <td onclick="showInstanceKeyValues('${escapeHtml(entry.id)}')">${entry.keyCount}</td>
                 `;

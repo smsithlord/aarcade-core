@@ -513,6 +513,40 @@ std::pair<std::string, std::string> Library::getFirstItem() {
     return dbManager_->getFirstItem();
 }
 
+// Helper function to recursively remove empty string values from KeyValues
+void removeEmptyStrings(ArcadeKeyValues* kv) {
+    if (!kv) {
+        return;
+    }
+
+    // Collect keys to remove (can't remove during iteration)
+    std::vector<std::string> keysToRemove;
+
+    ArcadeKeyValues* child = kv->GetFirstSubKey();
+    while (child) {
+        const char* keyName = child->GetName();
+        if (keyName && keyName[0] != '\0') {
+            // Check if this is a string type with empty value
+            if (child->GetValueType() == ArcadeKeyValues::TYPE_STRING) {
+                const char* value = child->GetString(nullptr, nullptr);
+                if (!value || value[0] == '\0') {
+                    keysToRemove.push_back(std::string(keyName));
+                }
+            }
+            // Recursively process children (for subsections)
+            else if (child->GetChildCount() > 0) {
+                removeEmptyStrings(child);
+            }
+        }
+        child = child->GetNextKey();
+    }
+
+    // Remove all empty string keys
+    for (const auto& key : keysToRemove) {
+        kv->RemoveKey(key.c_str());
+    }
+}
+
 // Helper function to convert KeyValues to plain text format
 std::string Library::keyValuesToPlainText(ArcadeKeyValues* kv, int indent) {
     if (!kv) {
@@ -528,12 +562,25 @@ std::string Library::keyValuesToPlainText(ArcadeKeyValues* kv, int indent) {
         result += indentStr + name;
     }
 
-    // Check if this node has a value (leaf node)
-    const char* value = kv->GetString(nullptr, nullptr);
-    if (value && value[0] != '\0') {
-        result += ": \"" + std::string(value) + "\"\n";
+    // Check if this node has a value (leaf node) based on its type
+    ArcadeKeyValues::ValueType type = kv->GetValueType();
+
+    if (type == ArcadeKeyValues::TYPE_STRING) {
+        const char* value = kv->GetString(nullptr, "");
+        if (value && value[0] != '\0') {
+            result += ": \"" + std::string(value) + "\"\n";
+        } else {
+            // Skip empty strings - don't display them at all
+            return "";
+        }
+    } else if (type == ArcadeKeyValues::TYPE_INT) {
+        int intVal = kv->GetInt(nullptr, 0);
+        result += ": " + std::to_string(intVal) + "\n";
+    } else if (type == ArcadeKeyValues::TYPE_FLOAT) {
+        float floatVal = kv->GetFloat(nullptr, 0.0f);
+        result += ": " + std::to_string(floatVal) + "\n";
     } else {
-        // This is a parent node with children
+        // This is a parent node with children (TYPE_SUBSECTION or TYPE_NONE)
         if (name && name[0] != '\0') {
             result += "\n";
         }
@@ -611,19 +658,21 @@ std::vector<Library::AnomalousInstanceEntry> Library::dbtFindAnomalousInstances(
             entry.keyCount = static_cast<int>(unexpectedKeys.size());
 
             // Extract generation value (integer)
+            // Use -1 to indicate key not found (distinguishes from key with value 0)
             ArcadeKeyValues* generationKey = instanceSection->FindKey("generation");
             if (generationKey) {
                 entry.generation = generationKey->GetInt(nullptr, 0);
             } else {
-                entry.generation = 0;
+                entry.generation = -1;
             }
 
             // Extract legacy value (integer)
+            // Use -1 to indicate key not found (distinguishes from key with value 0)
             ArcadeKeyValues* legacyKey = instanceSection->FindKey("legacy");
             if (legacyKey) {
                 entry.legacy = legacyKey->GetInt(nullptr, 0);
             } else {
-                entry.legacy = 0;
+                entry.legacy = -1;
             }
 
             results.push_back(entry);
@@ -745,6 +794,10 @@ std::vector<Library::RemoveKeysResult> Library::dbtRemoveAnomalousKeys(const std
             continue;
         }
 
+        // Remove any empty string attributes throughout the entire structure
+        removeEmptyStrings(kvData.get());
+        OutputDebugStringA(("[Library] dbtRemoveAnomalousKeys: Cleaned empty strings from " + id + "\n").c_str());
+
         // Serialize the modified KeyValues back to hex
         std::string updatedHex = kvData->SerializeToHex();
 
@@ -764,4 +817,156 @@ std::vector<Library::RemoveKeysResult> Library::dbtRemoveAnomalousKeys(const std
     OutputDebugStringA(("[Library] dbtRemoveAnomalousKeys: Processed " + std::to_string(results.size()) + " instances\n").c_str());
 
     return results;
+}
+
+Library::MergeResult Library::dbtMergeDatabase(const std::string& sourcePath, const std::string& tableName, bool skipExisting, bool overwriteIfLarger) {
+    OutputDebugStringA(("[Library] dbtMergeDatabase: Merging from '" + sourcePath + "' into table '" + tableName + "'\n").c_str());
+    OutputDebugStringA(("[Library] Options: skipExisting=" + std::string(skipExisting ? "true" : "false") +
+                       ", overwriteIfLarger=" + std::string(overwriteIfLarger ? "true" : "false") + "\n").c_str());
+
+    MergeResult result;
+    result.success = false;
+    result.totalEntries = 0;
+    result.mergedCount = 0;
+    result.skippedCount = 0;
+    result.overwrittenCount = 0;
+    result.failedCount = 0;
+
+    // Open the target database (library.db) if not already open
+    if (!openDatabase()) {
+        result.error = "Failed to open target database";
+        OutputDebugStringA("[Library] dbtMergeDatabase: Failed to open target database\n");
+        return result;
+    }
+
+    // Open source database
+    sqlite3* sourceDb = nullptr;
+    int rc = sqlite3_open(sourcePath.c_str(), &sourceDb);
+    if (rc != SQLITE_OK) {
+        result.error = "Cannot open source database: " + std::string(sqlite3_errmsg(sourceDb));
+        OutputDebugStringA(("[Library] dbtMergeDatabase: " + result.error + "\n").c_str());
+        if (sourceDb) {
+            sqlite3_close(sourceDb);
+        }
+        return result;
+    }
+
+    OutputDebugStringA("[Library] dbtMergeDatabase: Source database opened successfully\n");
+
+    // Prepare query to read all entries from source table
+    std::string sql = "SELECT id, value FROM " + tableName + ";";
+    sqlite3_stmt* stmt = nullptr;
+    rc = sqlite3_prepare_v2(sourceDb, sql.c_str(), -1, &stmt, nullptr);
+
+    if (rc != SQLITE_OK) {
+        result.error = "Failed to prepare query: " + std::string(sqlite3_errmsg(sourceDb));
+        OutputDebugStringA(("[Library] dbtMergeDatabase: " + result.error + "\n").c_str());
+        sqlite3_close(sourceDb);
+        return result;
+    }
+
+    OutputDebugStringA("[Library] dbtMergeDatabase: Query prepared, processing entries...\n");
+
+    // Process each entry from the source database
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char* id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        const void* blob = sqlite3_column_blob(stmt, 1);
+        int blobSize = sqlite3_column_bytes(stmt, 1);
+
+        if (!id || !blob || blobSize == 0) {
+            OutputDebugStringA("[Library] dbtMergeDatabase: Skipping entry with null/empty data\n");
+            continue;
+        }
+
+        result.totalEntries++;
+
+        // Convert blob to hex string
+        std::string hexData;
+        const unsigned char* blobBytes = static_cast<const unsigned char*>(blob);
+        hexData.reserve(blobSize * 2);
+
+        for (int i = 0; i < blobSize; i++) {
+            char hex[3];
+            sprintf_s(hex, sizeof(hex), "%02x", blobBytes[i]);
+            hexData += hex;
+        }
+
+        MergeEntry entry;
+        entry.id = id;
+        entry.blobSizeBytes = blobSize;
+        entry.error = "";
+
+        // Check if entry exists in target database
+        std::pair<std::string, std::string> existing = dbManager_->getEntryById(tableName, id);
+
+        if (existing.second.empty()) {
+            // Entry doesn't exist in target - insert it
+            if (dbManager_->updateEntryById(tableName, id, hexData)) {
+                entry.action = "merged";
+                result.mergedCount++;
+                OutputDebugStringA(("[Library] Merged new entry: " + std::string(id) + "\n").c_str());
+            } else {
+                entry.action = "failed";
+                entry.error = "Insert failed";
+                result.failedCount++;
+                OutputDebugStringA(("[Library] Failed to insert entry: " + std::string(id) + "\n").c_str());
+            }
+        } else {
+            // Entry exists - apply merge strategy
+            if (skipExisting && !overwriteIfLarger) {
+                // Skip existing entries (default behavior)
+                entry.action = "skipped";
+                result.skippedCount++;
+            } else if (overwriteIfLarger) {
+                // Overwrite only if source blob is larger
+                int existingSize = static_cast<int>(existing.second.length() / 2);  // Hex string to bytes
+
+                if (blobSize > existingSize) {
+                    if (dbManager_->updateEntryById(tableName, id, hexData)) {
+                        entry.action = "overwritten";
+                        result.overwrittenCount++;
+                        OutputDebugStringA(("[Library] Overwritten (larger): " + std::string(id) +
+                                          " (" + std::to_string(existingSize) + " -> " + std::to_string(blobSize) + " bytes)\n").c_str());
+                    } else {
+                        entry.action = "failed";
+                        entry.error = "Update failed";
+                        result.failedCount++;
+                        OutputDebugStringA(("[Library] Failed to overwrite entry: " + std::string(id) + "\n").c_str());
+                    }
+                } else {
+                    entry.action = "skipped";
+                    result.skippedCount++;
+                }
+            } else {
+                // Overwrite all existing entries
+                if (dbManager_->updateEntryById(tableName, id, hexData)) {
+                    entry.action = "overwritten";
+                    result.overwrittenCount++;
+                    OutputDebugStringA(("[Library] Overwritten: " + std::string(id) + "\n").c_str());
+                } else {
+                    entry.action = "failed";
+                    entry.error = "Update failed";
+                    result.failedCount++;
+                    OutputDebugStringA(("[Library] Failed to overwrite entry: " + std::string(id) + "\n").c_str());
+                }
+            }
+        }
+
+        result.entries.push_back(entry);
+    }
+
+    // Clean up
+    sqlite3_finalize(stmt);
+    sqlite3_close(sourceDb);
+
+    result.success = true;
+    result.error = "";
+
+    OutputDebugStringA(("[Library] dbtMergeDatabase: Completed! Total=" + std::to_string(result.totalEntries) +
+                       ", Merged=" + std::to_string(result.mergedCount) +
+                       ", Skipped=" + std::to_string(result.skippedCount) +
+                       ", Overwritten=" + std::to_string(result.overwrittenCount) +
+                       ", Failed=" + std::to_string(result.failedCount) + "\n").c_str());
+
+    return result;
 }

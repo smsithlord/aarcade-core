@@ -8,6 +8,15 @@
 #include <memory>
 
 class ArcadeKeyValues {
+public:
+    enum ValueType {
+        TYPE_NONE = 0,
+        TYPE_STRING = 1,
+        TYPE_INT = 2,
+        TYPE_FLOAT = 3,
+        TYPE_SUBSECTION = 4
+    };
+
 private:
     std::string name;
     std::string stringValue;
@@ -15,14 +24,7 @@ private:
     float floatValue;
     std::unordered_map<std::string, std::unique_ptr<ArcadeKeyValues>> children;
     ArcadeKeyValues* parent;
-
-    enum ValueType {
-        TYPE_NONE = 0,
-        TYPE_STRING = 1,
-        TYPE_INT = 2,
-        TYPE_FLOAT = 3,
-        TYPE_SUBSECTION = 4
-    } valueType;
+    ValueType valueType;
 
 public:
     // Constructors
@@ -235,6 +237,10 @@ public:
 
     int GetChildCount() const {
         return static_cast<int>(children.size());
+    }
+
+    ValueType GetValueType() const {
+        return valueType;
     }
 
     void Clear() {

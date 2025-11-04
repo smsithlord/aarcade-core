@@ -106,7 +106,7 @@ public:
         std::vector<std::string> unexpectedKeys;
         int keyCount;
         int generation;
-        int legacy;
+        int legacy;  // -1 = not found, otherwise displays the actual integer value
     };
 
     std::vector<AnomalousInstanceEntry> dbtFindAnomalousInstances();
@@ -119,6 +119,27 @@ public:
     };
 
     std::vector<RemoveKeysResult> dbtRemoveAnomalousKeys(const std::vector<std::string>& instanceIds);
+
+    // Database merge tool
+    struct MergeEntry {
+        std::string id;
+        std::string action;  // "merged", "skipped", "overwritten", "failed"
+        std::string error;
+        int blobSizeBytes;
+    };
+
+    struct MergeResult {
+        bool success;
+        std::string error;
+        int totalEntries;
+        int mergedCount;
+        int skippedCount;
+        int overwrittenCount;
+        int failedCount;
+        std::vector<MergeEntry> entries;  // Detailed log of all operations
+    };
+
+    MergeResult dbtMergeDatabase(const std::string& sourcePath, const std::string& tableName, bool skipExisting, bool overwriteIfLarger);
 
 private:
     // Helper function for converting KeyValues to plain text
