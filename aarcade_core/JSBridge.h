@@ -118,6 +118,12 @@ public:
     JSValueRef dbtRemoveAnomalousKeys(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
         size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 
+    JSValueRef dbtFindEmptyInstances(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+        size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
+
+    JSValueRef dbtPurgeEmptyInstances(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+        size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
+
     JSValueRef dbtMergeDatabase(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
         size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 

@@ -862,6 +862,107 @@ std::vector<Library::RemoveKeysResult> Library::dbtRemoveAnomalousKeys(const std
     return results;
 }
 
+std::vector<Library::EmptyInstanceEntry> Library::dbtFindEmptyInstances() {
+    OutputDebugStringA("[Library] dbtFindEmptyInstances: Searching for instances with zero objects\n");
+
+    std::vector<EmptyInstanceEntry> results;
+
+    // Open database if not already open
+    if (!openDatabase()) {
+        OutputDebugStringA("[Library] dbtFindEmptyInstances: Failed to open database\n");
+        return results;
+    }
+
+    // Get all instances (up to 10000)
+    std::vector<std::pair<std::string, std::string>> allInstances = dbManager_->getFirstEntries("instances", 10000);
+
+    OutputDebugStringA(("[Library] dbtFindEmptyInstances: Analyzing " + std::to_string(allInstances.size()) + " instances\n").c_str());
+
+    // Iterate through all instances
+    for (const auto& instance : allInstances) {
+        if (instance.second.empty()) {
+            continue;
+        }
+
+        const std::string& id = instance.first;
+
+        // Parse the hex data
+        auto kvData = ArcadeKeyValues::ParseFromHex(instance.second);
+        if (!kvData) {
+            continue;
+        }
+
+        // Navigate to the instance section (root -> "instance")
+        ArcadeKeyValues* instanceSection = kvData->GetFirstSubKey();
+        if (!instanceSection) {
+            continue;
+        }
+
+        // Look for the "objects" key
+        ArcadeKeyValues* objectsSection = instanceSection->FindKey("objects");
+
+        EmptyInstanceEntry entry;
+        entry.id = id;
+        entry.hasObjectsKey = (objectsSection != nullptr);
+        entry.objectCount = 0;
+
+        // Count objects if the "objects" key exists
+        if (objectsSection) {
+            entry.objectCount = objectsSection->GetChildCount();
+        }
+
+        // Only add to results if it has zero objects or no objects key
+        if (entry.objectCount == 0) {
+            results.push_back(entry);
+            OutputDebugStringA(("[Library] dbtFindEmptyInstances: Found empty instance: " + id +
+                               " (hasObjectsKey=" + (entry.hasObjectsKey ? "true" : "false") + ")\n").c_str());
+        }
+    }
+
+    OutputDebugStringA(("[Library] dbtFindEmptyInstances: Found " + std::to_string(results.size()) + " empty instances\n").c_str());
+
+    return results;
+}
+
+std::vector<Library::PurgeResult> Library::dbtPurgeEmptyInstances(const std::vector<std::string>& instanceIds) {
+    OutputDebugStringA(("[Library] dbtPurgeEmptyInstances: Purging " + std::to_string(instanceIds.size()) + " instances\n").c_str());
+
+    std::vector<PurgeResult> results;
+
+    // Open database if not already open
+    if (!openDatabase()) {
+        OutputDebugStringA("[Library] dbtPurgeEmptyInstances: Failed to open database\n");
+        // Return failure for all instances
+        for (const auto& id : instanceIds) {
+            results.push_back({ id, false, "Database not available" });
+        }
+        return results;
+    }
+
+    // Process each instance
+    for (const auto& id : instanceIds) {
+        PurgeResult result;
+        result.id = id;
+        result.success = false;
+
+        // Delete the instance from the database
+        if (dbManager_->deleteEntryById("instances", id)) {
+            result.success = true;
+            result.error = "";
+            OutputDebugStringA(("[Library] dbtPurgeEmptyInstances: Successfully purged instance " + id + "\n").c_str());
+        } else {
+            result.error = "Failed to delete from database";
+            OutputDebugStringA(("[Library] dbtPurgeEmptyInstances: Failed to delete instance " + id + "\n").c_str());
+        }
+
+        results.push_back(result);
+    }
+
+    OutputDebugStringA(("[Library] dbtPurgeEmptyInstances: Processed " + std::to_string(results.size()) + " instances\n").c_str());
+
+    return results;
+}
+
 Library::MergeResult Library::dbtMergeDatabase(const std::string& sourcePath, const std::string& tableName, bool skipExisting, bool overwriteIfLarger) {
     OutputDebugStringA(("[Library] dbtMergeDatabase: Merging from '" + sourcePath + "' into table '" + tableName + "'\n").c_str());
     OutputDebugStringA(("[Library] Options: skipExisting=" + std::string(skipExisting ? "true" : "false") +

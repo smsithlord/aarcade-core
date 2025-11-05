@@ -397,6 +397,36 @@ public:
         return true;
     }
 
+    // Helper method to delete an entry by ID
+    bool deleteEntryById(const std::string& tableName, const std::string& id) {
+        if (!db) {
+            debugOutput("No database connection available.");
+            return false;
+        }
+
+        std::string sql = "DELETE FROM \"" + tableName + "\" WHERE id = ?;";
+
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            debugOutput("Failed to prepare delete query for ID " + id + ": " + std::string(sqlite3_errmsg(db)));
+            return false;
+        }
+
+        // Bind the ID
+        sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+
+        int result = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (result != SQLITE_DONE) {
+            debugOutput("Failed to delete entry " + id + ": " + std::string(sqlite3_errmsg(db)));
+            return false;
+        }
+
+        debugOutput("Successfully deleted entry: " + id);
+        return true;
+    }
+
     // Database tools: Get database file size
     struct DatabaseStats {
         std::string filePath;

@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Purge Empty Instances - Database Tools</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+
+        .page-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+            min-height: calc(100vh - 40px);
+        }
+
+        .breadcrumbs {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 12px 20px;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.1);
+            font-size: 14px;
+        }
+
+        .breadcrumbs a {
+            color: #667eea;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .breadcrumbs a:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+
+        .breadcrumbs .separator {
+            margin: 0 8px;
+            color: #999;
+        }
+
+        .breadcrumbs .current {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            min-width: 800px;
+            max-width: 1200px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+
+        .button-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            background: #f9f9f9;
+        }
+
+        .section-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .entry-button {
+            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(68, 160, 141, 0.3);
+            margin: 5px;
+        }
+
+        .entry-button:hover {
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .danger-button {
+            background: linear-gradient(45deg, #e74c3c, #c0392b);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3);
+            margin: 5px;
+        }
+
+        .danger-button:hover {
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+            min-height: 20px;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.running {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        #resultsSection {
+            margin-top: 30px;
+        }
+
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+        }
+
+        .results-table th {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        .results-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .results-table tbody tr:hover {
+            background: #f5f5f5;
+        }
+
+        .results-table input[type="checkbox"] {
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+        }
+
+        .info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 4px solid #2196f3;
+        }
+
+        .info p {
+            margin: 5px 0;
+            color: #1565c0;
+            font-size: 14px;
+        }
+
+        .warning {
+            background: #fff3e0;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 4px solid #ff9800;
+        }
+
+        .warning p {
+            margin: 5px 0;
+            color: #e65100;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="breadcrumbs">
+        <a href="welcome.html">Home</a>
+        <span class="separator">/</span>
+        <a href="database-tools.html">Database Tools</a>
+        <span class="separator">/</span>
+        <span class="current">Purge Empty Instances</span>
+    </nav>
+
+    <div class="page-wrapper">
+        <div class="container">
+            <h1>🗑️ Purge Empty Instances</h1>
+            <p class="subtitle">Detect and delete instances with zero objects</p>
+
+            <div class="button-section">
+                <div class="section-title">🔧 Detection</div>
+
+                <button class="entry-button" onclick="detectEmptyInstances()">
+                    🔍 Detect Empty Instances
+                </button>
+            </div>
+
+            <div id="status" class="status"></div>
+
+            <div id="resultsSection" style="display: none;">
+                <div class="section-title">📊 Results</div>
+
+                <table id="resultsTable" class="results-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="selectAll" onclick="toggleSelectAll()"></th>
+                            <th>ID</th>
+                            <th>Object Count</th>
+                            <th>Has Objects Key</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody">
+                    </tbody>
+                </table>
+
+                <div class="button-section" style="margin-top: 20px;">
+                    <div class="section-title">⚠️ Danger Zone</div>
+
+                    <button class="danger-button" onclick="bulkPurgeInstances()">
+                        🗑️ Purge Selected Instances
+                    </button>
+                </div>
+            </div>
+
+            <div class="warning">
+                <p><strong>⚠️ Warning:</strong></p>
+                <p>• This operation PERMANENTLY DELETES instances from the database</p>
+                <p>• This action CANNOT be undone</p>
+                <p>• Make sure you have a backup before purging instances</p>
+            </div>
+
+            <div class="info">
+                <p><strong>ℹ️ About This Tool:</strong></p>
+                <p>• Scans all instances in the database for empty instances (zero objects)</p>
+                <p>• An instance is considered empty if it has zero objects or no objects key at all</p>
+                <p>• Select instances and click "Purge Selected Instances" to permanently delete them</p>
+                <p>• This helps clean up unused or corrupted instance data</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmationModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+        <div style="background: white; padding: 30px; border-radius: 10px; max-width: 500px; box-shadow: 0 10px 40px rgba(0,0,0,0.3);">
+            <h2 style="margin-top: 0; color: #e74c3c;">⚠️ Confirm Permanent Deletion</h2>
+            <p id="confirmationMessage" style="color: #666; line-height: 1.6; white-space: pre-line;"></p>
+            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                <button onclick="cancelPurge()" style="padding: 10px 20px; background: #ccc; border: none; border-radius: 5px; cursor: pointer; font-size: 14px;">
+                    Cancel
+                </button>
+                <button onclick="proceedWithPurge()" style="padding: 10px 20px; background: linear-gradient(45deg, #e74c3c, #c0392b); color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                    Delete Permanently
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let emptyEntries = [];
+        let selectedToPurge = [];
+
+        function detectEmptyInstances() {
+            showRunning('🔄 Scanning instances for empty instances...');
+
+            try {
+                // Call C++ backend
+                const results = aapi.dbtFindEmptyInstances();
+
+                if (results && results.length > 0) {
+                    emptyEntries = results;
+                    displayResults(results);
+                    showSuccess(`✅ Found ${results.length} empty instances!`);
+                } else {
+                    emptyEntries = [];
+                    hideResults();
+                    showSuccess('✅ No empty instances found. All instances have objects.');
+                }
+            } catch (error) {
+                showError('❌ Error detecting empty instances: ' + error.message);
+                console.error('Detection error:', error);
+            }
+        }
+
+        function displayResults(results) {
+            const resultsSection = document.getElementById('resultsSection');
+            const resultsBody = document.getElementById('resultsBody');
+
+            // Clear previous results
+            resultsBody.innerHTML = '';
+
+            // Populate table
+            results.forEach((entry, index) => {
+                const row = document.createElement('tr');
+
+                row.innerHTML = `
+                    <td><input type="checkbox" class="entry-checkbox" data-index="${index}"></td>
+                    <td>${escapeHtml(entry.id)}</td>
+                    <td>${entry.objectCount}</td>
+                    <td>${entry.hasObjectsKey ? 'Yes' : 'No'}</td>
+                `;
+                resultsBody.appendChild(row);
+            });
+
+            resultsSection.style.display = 'block';
+        }
+
+        function hideResults() {
+            document.getElementById('resultsSection').style.display = 'none';
+        }
+
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('selectAll');
+            const checkboxes = document.querySelectorAll('.entry-checkbox');
+            checkboxes.forEach(cb => cb.checked = selectAll.checked);
+        }
+
+        function getSelectedEntries() {
+            const selected = [];
+            const checkboxes = document.querySelectorAll('.entry-checkbox:checked');
+            checkboxes.forEach(cb => {
+                const index = parseInt(cb.dataset.index);
+                selected.push(emptyEntries[index]);
+            });
+            return selected;
+        }
+
+        // Bulk purge operation
+        function bulkPurgeInstances() {
+            const selected = getSelectedEntries();
+
+            if (selected.length === 0) {
+                showError('❌ Please select at least one entry.');
+                return;
+            }
+
+            // Store selected entries for later use
+            selectedToPurge = selected;
+
+            // Show custom confirmation modal
+            const message = `You are about to PERMANENTLY DELETE ${selected.length} instance(s) from the database.\n\n` +
+                          `This action CANNOT be undone!\n\n` +
+                          `Are you sure you want to proceed?`;
+
+            document.getElementById('confirmationMessage').textContent = message;
+            document.getElementById('confirmationModal').style.display = 'flex';
+        }
+
+        function cancelPurge() {
+            document.getElementById('confirmationModal').style.display = 'none';
+            selectedToPurge = [];
+            showSuccess('✅ Purge operation cancelled.');
+        }
+
+        function proceedWithPurge() {
+            document.getElementById('confirmationModal').style.display = 'none';
+
+            showRunning(`⏳ Purging ${selectedToPurge.length} instances...`);
+
+            // Use setTimeout to allow UI to update before blocking operation
+            setTimeout(() => {
+                try {
+                    // Extract entry IDs
+                    const entryIds = selectedToPurge.map(entry => entry.id);
+
+                    // Call C++ backend
+                    const results = aapi.dbtPurgeEmptyInstances(entryIds);
+
+                // Count successes and failures
+                let successCount = 0;
+                let failureCount = 0;
+                let failedIds = [];
+
+                results.forEach(result => {
+                    if (result.success) {
+                        successCount++;
+                    } else {
+                        failureCount++;
+                        failedIds.push(result.id + ': ' + result.error);
+                    }
+                });
+
+                // Show results
+                if (failureCount === 0) {
+                    showSuccess(`✅ Successfully purged ${successCount} instances!`);
+                    // Refresh the results to remove purged entries
+                    setTimeout(() => detectEmptyInstances(), 1000);
+                } else if (successCount === 0) {
+                    showError(`❌ Failed to purge all ${failureCount} instances. ${failedIds.join(', ')}`);
+                } else {
+                    showSuccess(`⚠️ Partial success: ${successCount} succeeded, ${failureCount} failed. Failed: ${failedIds.join(', ')}`);
+                    // Refresh the results
+                    setTimeout(() => detectEmptyInstances(), 1000);
+                }
+
+                    console.log('Purge results:', results);
+                } catch (error) {
+                    showError('❌ Error purging instances: ' + error.message);
+                    console.error('Purge error:', error);
+                }
+            }, 100);
+        }
+
+        // Status display functions
+        function showRunning(message) {
+            const status = document.getElementById('status');
+            status.className = 'status running';
+            status.textContent = message;
+        }
+
+        function showSuccess(message) {
+            const status = document.getElementById('status');
+            status.className = 'status success';
+            status.textContent = message;
+        }
+
+        function showError(message) {
+            const status = document.getElementById('status');
+            status.className = 'status error';
+            status.textContent = message;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Initialize on load
+        window.addEventListener('load', function() {
+            showSuccess('🟢 Ready to detect empty instances');
+        });
+    </script>
+</body>
+</html>

@@ -120,6 +120,23 @@ public:
 
     std::vector<RemoveKeysResult> dbtRemoveAnomalousKeys(const std::vector<std::string>& instanceIds);
 
+    // Empty instances detection and purge
+    struct EmptyInstanceEntry {
+        std::string id;
+        int objectCount;  // Will be 0 for truly empty instances
+        bool hasObjectsKey;  // false if "objects" key is missing
+    };
+
+    std::vector<EmptyInstanceEntry> dbtFindEmptyInstances();
+
+    struct PurgeResult {
+        std::string id;
+        bool success;
+        std::string error;
+    };
+
+    std::vector<PurgeResult> dbtPurgeEmptyInstances(const std::vector<std::string>& instanceIds);
+
     // Database merge tool
     struct MergeEntry {
         std::string id;
