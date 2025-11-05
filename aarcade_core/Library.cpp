@@ -513,40 +513,6 @@ std::pair<std::string, std::string> Library::getFirstItem() {
     return dbManager_->getFirstItem();
 }
 
-// Helper function to recursively remove empty string values from KeyValues
-void removeEmptyStrings(ArcadeKeyValues* kv) {
-    if (!kv) {
-        return;
-    }
-
-    // Collect keys to remove (can't remove during iteration)
-    std::vector<std::string> keysToRemove;
-
-    ArcadeKeyValues* child = kv->GetFirstSubKey();
-    while (child) {
-        const char* keyName = child->GetName();
-        if (keyName && keyName[0] != '\0') {
-            // Check if this is a string type with empty value
-            if (child->GetValueType() == ArcadeKeyValues::TYPE_STRING) {
-                const char* value = child->GetString(nullptr, nullptr);
-                if (!value || value[0] == '\0') {
-                    keysToRemove.push_back(std::string(keyName));
-                }
-            }
-            // Recursively process children (for subsections)
-            else if (child->GetChildCount() > 0) {
-                removeEmptyStrings(child);
-            }
-        }
-        child = child->GetNextKey();
-    }
-
-    // Remove all empty string keys
-    for (const auto& key : keysToRemove) {
-        kv->RemoveKey(key.c_str());
-    }
-}
-
 // Helper function to convert KeyValues to plain text format
 std::string Library::keyValuesToPlainText(ArcadeKeyValues* kv, int indent) {
     if (!kv) {
@@ -567,12 +533,8 @@ std::string Library::keyValuesToPlainText(ArcadeKeyValues* kv, int indent) {
 
     if (type == ArcadeKeyValues::TYPE_STRING) {
         const char* value = kv->GetString(nullptr, "");
-        if (value && value[0] != '\0') {
-            result += ": \"" + std::string(value) + "\"\n";
-        } else {
-            // Skip empty strings - don't display them at all
-            return "";
-        }
+        // Always display strings, even if empty - show as empty quotes
+        result += ": \"" + std::string(value) + "\"\n";
     } else if (type == ArcadeKeyValues::TYPE_INT) {
         int intVal = kv->GetInt(nullptr, 0);
         result += ": " + std::to_string(intVal) + "\n";
@@ -581,15 +543,27 @@ std::string Library::keyValuesToPlainText(ArcadeKeyValues* kv, int indent) {
         result += ": " + std::to_string(floatVal) + "\n";
     } else {
         // This is a parent node with children (TYPE_SUBSECTION or TYPE_NONE)
-        if (name && name[0] != '\0') {
-            result += "\n";
-        }
 
-        // Iterate through all children
-        ArcadeKeyValues* child = kv->GetFirstSubKey();
-        while (child) {
-            result += keyValuesToPlainText(child, indent + 1);
-            child = child->GetNextKey();
+        // Check if this subsection has any children
+        int childCount = kv->GetChildCount();
+
+        if (childCount == 0) {
+            // Empty subsection - display as "(empty subsection)"
+            if (name && name[0] != '\0') {
+                result += ": (empty subsection)\n";
+            }
+        } else {
+            // Has children - display them
+            if (name && name[0] != '\0') {
+                result += "\n";
+            }
+
+            // Iterate through all children
+            ArcadeKeyValues* child = kv->GetFirstSubKey();
+            while (child) {
+                result += keyValuesToPlainText(child, indent + 1);
+                child = child->GetNextKey();
+            }
         }
     }
 
@@ -716,6 +690,75 @@ std::string Library::dbtGetInstanceKeyValues(const std::string& instanceId) {
     return plainText;
 }
 
+// Helper function to recursively prune empty string values and empty parent keys.
+// Returns true if this node is logically empty and should be removed by its parent.
+static bool pruneEmptyKeysRecursive(ArcadeKeyValues* node, bool isRoot) {
+    if (!node) {
+        return true;
+    }
+
+    // First recurse into children and figure out which ones should be removed
+    std::vector<std::string> childNamesToRemove;
+
+    ArcadeKeyValues* child = node->GetFirstSubKey();
+    while (child) {
+        bool childEmpty = pruneEmptyKeysRecursive(child, false);
+        if (childEmpty) {
+            const char* childName = child->GetName();
+            if (childName && childName[0] != '\0') {
+                childNamesToRemove.push_back(std::string(childName));
+            }
+        }
+        child = child->GetNextKey();
+    }
+
+    // Remove all children that were reported as empty
+    for (const auto& name : childNamesToRemove) {
+        node->RemoveKey(name.c_str());
+    }
+
+    // Decide if this node itself is empty
+    ArcadeKeyValues::ValueType type = node->GetValueType();
+
+    // Numeric values are always kept even if they have no children
+    if (type == ArcadeKeyValues::TYPE_INT || type == ArcadeKeyValues::TYPE_FLOAT) {
+        return false;
+    }
+
+    if (type == ArcadeKeyValues::TYPE_STRING) {
+        const char* value = node->GetString(nullptr, nullptr);
+        if (value && value[0] != '\0') {
+            // Non-empty string, this node is not empty
+            return false;
+        }
+        // Empty string: treat as no data and fall through to child/empty check
+    }
+
+    // At this point, the node has no non-empty scalar data.
+    // If it still has children, it's not empty.
+    if (node->GetChildCount() > 0) {
+        return false;
+    }
+
+    // No children and no data: this node is logically empty.
+    // Never delete the top-level section we start from.
+    if (isRoot) {
+        return false;
+    }
+
+    return true;
+}
+
+// Helper function to remove empty string values and prune empty parent keys from KeyValues
+void removeEmptyStrings(ArcadeKeyValues* kv) {
+    if (!kv) {
+        return;
+    }
+
+    // Start pruning at this node, treating it as the root so we don't delete it
+    pruneEmptyKeysRecursive(kv, true);
+}
+
 std::vector<Library::RemoveKeysResult> Library::dbtRemoveAnomalousKeys(const std::vector<std::string>& instanceIds) {
     OutputDebugStringA(("[Library] dbtRemoveAnomalousKeys: Removing anomalous keys from " + std::to_string(instanceIds.size()) + " instances\n").c_str());
 
@@ -794,9 +837,9 @@ std::vector<Library::RemoveKeysResult> Library::dbtRemoveAnomalousKeys(const std
             continue;
         }
 
-        // Remove any empty string attributes throughout the entire structure
-        removeEmptyStrings(kvData.get());
-        OutputDebugStringA(("[Library] dbtRemoveAnomalousKeys: Cleaned empty strings from " + id + "\n").c_str());
+        // Remove any empty string attributes and prune parent keys that become empty
+        removeEmptyStrings(instanceSection);
+        OutputDebugStringA(("[Library] dbtRemoveAnomalousKeys: Cleaned empty strings and pruned empty parents for " + id + "\n").c_str());
 
         // Serialize the modified KeyValues back to hex
         std::string updatedHex = kvData->SerializeToHex();

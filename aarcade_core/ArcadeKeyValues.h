@@ -4,8 +4,8 @@
 #include <iostream>
 #include <vector>
 #include <string>
-#include <unordered_map>
 #include <memory>
+#include <cstring>
 
 class ArcadeKeyValues {
 public:
@@ -22,14 +22,15 @@ private:
     std::string stringValue;
     int intValue;
     float floatValue;
-    std::unordered_map<std::string, std::unique_ptr<ArcadeKeyValues>> children;
+    std::vector<std::pair<std::string, std::unique_ptr<ArcadeKeyValues>>> children;
     ArcadeKeyValues* parent;
+    int childIndex; // Index of this node in parent's children vector
     ValueType valueType;
 
 public:
     // Constructors
     ArcadeKeyValues(const std::string& keyName = "")
-        : name(keyName), intValue(0), floatValue(0.0f), parent(nullptr), valueType(TYPE_NONE) {
+        : name(keyName), intValue(0), floatValue(0.0f), parent(nullptr), childIndex(-1), valueType(TYPE_NONE) {
     }
 
     ~ArcadeKeyValues() = default;
@@ -51,9 +52,10 @@ public:
             return (valueType == TYPE_STRING) ? stringValue.c_str() : defaultValue;
         }
 
-        auto it = children.find(keyName);
-        if (it != children.end() && it->second->valueType == TYPE_STRING) {
-            return it->second->stringValue.c_str();
+        for (const auto& pair : children) {
+            if (pair.first == keyName && pair.second->valueType == TYPE_STRING) {
+                return pair.second->stringValue.c_str();
+            }
         }
         return defaultValue;
     }
@@ -63,19 +65,21 @@ public:
             return (valueType == TYPE_INT) ? intValue : defaultValue;
         }
 
-        auto it = children.find(keyName);
-        if (it != children.end()) {
-            if (it->second->valueType == TYPE_INT) {
-                return it->second->intValue;
-            }
-            else if (it->second->valueType == TYPE_STRING) {
-                // Try to convert string to int
-                try {
-                    return std::stoi(it->second->stringValue);
+        for (const auto& pair : children) {
+            if (pair.first == keyName) {
+                if (pair.second->valueType == TYPE_INT) {
+                    return pair.second->intValue;
                 }
-                catch (...) {
-                    return defaultValue;
+                else if (pair.second->valueType == TYPE_STRING) {
+                    // Try to convert string to int
+                    try {
+                        return std::stoi(pair.second->stringValue);
+                    }
+                    catch (...) {
+                        return defaultValue;
+                    }
                 }
+                break;
             }
         }
         return defaultValue;
@@ -86,22 +90,24 @@ public:
             return (valueType == TYPE_FLOAT) ? floatValue : defaultValue;
         }
 
-        auto it = children.find(keyName);
-        if (it != children.end()) {
-            if (it->second->valueType == TYPE_FLOAT) {
-                return it->second->floatValue;
-            }
-            else if (it->second->valueType == TYPE_STRING) {
-                // Try to convert string to float
-                try {
-                    return std::stof(it->second->stringValue);
+        for (const auto& pair : children) {
+            if (pair.first == keyName) {
+                if (pair.second->valueType == TYPE_FLOAT) {
+                    return pair.second->floatValue;
                 }
-                catch (...) {
-                    return defaultValue;
+                else if (pair.second->valueType == TYPE_STRING) {
+                    // Try to convert string to float
+                    try {
+                        return std::stof(pair.second->stringValue);
+                    }
+                    catch (...) {
+                        return defaultValue;
+                    }
                 }
-            }
-            else if (it->second->valueType == TYPE_INT) {
-                return static_cast<float>(it->second->intValue);
+                else if (pair.second->valueType == TYPE_INT) {
+                    return static_cast<float>(pair.second->intValue);
+                }
+                break;
             }
         }
         return defaultValue;
@@ -118,14 +124,16 @@ public:
             return defaultValue;
         }
 
-        auto it = children.find(keyName);
-        if (it != children.end()) {
-            if (it->second->valueType == TYPE_INT) {
-                return it->second->intValue != 0;
-            }
-            else if (it->second->valueType == TYPE_STRING) {
-                const std::string& val = it->second->stringValue;
-                return val == "1" || val == "true" || val == "True";
+        for (const auto& pair : children) {
+            if (pair.first == keyName) {
+                if (pair.second->valueType == TYPE_INT) {
+                    return pair.second->intValue != 0;
+                }
+                else if (pair.second->valueType == TYPE_STRING) {
+                    const std::string& val = pair.second->stringValue;
+                    return val == "1" || val == "true" || val == "True";
+                }
+                break;
             }
         }
         return defaultValue;
@@ -133,17 +141,19 @@ public:
 
     // Subsection access
     ArcadeKeyValues* FindKey(const char* keyName, bool createIfNotFound = false) {
-        auto it = children.find(keyName);
-        if (it != children.end()) {
-            return it->second.get();
+        for (size_t i = 0; i < children.size(); ++i) {
+            if (children[i].first == keyName) {
+                return children[i].second.get();
+            }
         }
 
         if (createIfNotFound) {
             auto newKey = std::make_unique<ArcadeKeyValues>(keyName);
             newKey->parent = this;
+            newKey->childIndex = static_cast<int>(children.size());
             newKey->valueType = TYPE_SUBSECTION;
             ArcadeKeyValues* ptr = newKey.get();
-            children[keyName] = std::move(newKey);
+            children.push_back({keyName, std::move(newKey)});
             return ptr;
         }
 
@@ -151,26 +161,27 @@ public:
     }
 
     const ArcadeKeyValues* FindKey(const char* keyName) const {
-        auto it = children.find(keyName);
-        return (it != children.end()) ? it->second.get() : nullptr;
+        for (const auto& pair : children) {
+            if (pair.first == keyName) {
+                return pair.second.get();
+            }
+        }
+        return nullptr;
     }
 
     // Iteration support
     ArcadeKeyValues* GetFirstSubKey() const {
         if (children.empty()) return nullptr;
-        return children.begin()->second.get();
+        return children[0].second.get();
     }
 
     ArcadeKeyValues* GetNextKey() const {
-        if (!parent) return nullptr;
+        if (!parent || childIndex < 0) return nullptr;
 
-        auto& parentChildren = parent->children;
-        auto it = parentChildren.find(name);
-        if (it != parentChildren.end()) {
-            ++it;
-            if (it != parentChildren.end()) {
-                return it->second.get();
-            }
+        const auto& parentChildren = parent->children;
+        int nextIndex = childIndex + 1;
+        if (nextIndex < static_cast<int>(parentChildren.size())) {
+            return parentChildren[nextIndex].second.get();
         }
         return nullptr;
     }
@@ -222,10 +233,15 @@ public:
             return false;
         }
 
-        auto it = children.find(keyName);
-        if (it != children.end()) {
-            children.erase(it);
-            return true;
+        for (size_t i = 0; i < children.size(); ++i) {
+            if (children[i].first == keyName) {
+                children.erase(children.begin() + i);
+                // Update childIndex for all subsequent children
+                for (size_t j = i; j < children.size(); ++j) {
+                    children[j].second->childIndex = static_cast<int>(j);
+                }
+                return true;
+            }
         }
         return false;
     }
@@ -280,8 +296,8 @@ public:
         }
     }
 
-    // Get the children map for iteration (needed for JS conversion)
-    const std::unordered_map<std::string, std::unique_ptr<ArcadeKeyValues>>& GetChildren() const {
+    // Get the children vector for iteration (needed for JS conversion)
+    const std::vector<std::pair<std::string, std::unique_ptr<ArcadeKeyValues>>>& GetChildren() const {
         return children;
     }
 
@@ -289,8 +305,11 @@ public:
     std::vector<uint8_t> SerializeToBinary() const {
         std::vector<uint8_t> result;
         serializeRecursive(result);
+        // Add end-of-root object marker so the format matches what parseRecursive expects
+        result.push_back(0x08);
         return result;
     }
+
 
     // Convert to hex string
     std::string SerializeToHex() const {
@@ -385,12 +404,31 @@ private:
                     break;
                 }
             }
+            else if (typeByte == 0x03) { // Float32 (little-endian)
+                if (position + 4 <= bytes.size()) {
+                    // Read 4 bytes as little-endian and interpret as float
+                    uint32_t intBits = bytes[position] |
+                        (bytes[position + 1] << 8) |
+                        (bytes[position + 2] << 16) |
+                        (bytes[position + 3] << 24);
+                    float value;
+                    std::memcpy(&value, &intBits, sizeof(float));
+                    child->floatValue = value;
+                    child->valueType = TYPE_FLOAT;
+                    position += 4;
+                }
+                else {
+                    break;
+                }
+            }
             else {
                 std::cerr << "Unknown type byte: 0x" << std::hex << static_cast<int>(typeByte) << std::endl;
                 break;
             }
 
-            kv->children[keyName] = std::move(child);
+            // Set childIndex before adding to parent's children vector
+            child->childIndex = static_cast<int>(kv->children.size());
+            kv->children.push_back({keyName, std::move(child)});
         }
 
         return kv;
@@ -398,13 +436,26 @@ private:
 
     // Helper method to serialize to binary format
     void serializeRecursive(std::vector<uint8_t>& buffer) const {
-        // Serialize all children
+        // Serialize all children in order
         for (const auto& pair : children) {
             const std::string& childName = pair.first;
             const std::unique_ptr<ArcadeKeyValues>& child = pair.second;
 
-            // Write type byte
-            if (child->valueType == TYPE_SUBSECTION || child->GetChildCount() > 0) {
+            // Determine if this is a subsection (has children OR explicitly marked as subsection)
+            bool isSubsection = (child->valueType == TYPE_SUBSECTION || child->GetChildCount() > 0);
+
+            // Skip empty strings to avoid cluttering the binary data
+            if (child->valueType == TYPE_STRING && child->stringValue.empty()) {
+                continue;
+            }
+
+            // Skip empty subsections (no children and TYPE_SUBSECTION or TYPE_NONE)
+            if (isSubsection && child->GetChildCount() == 0) {
+                continue;
+            }
+
+            // Write type byte based on actual value type
+            if (isSubsection) {
                 buffer.push_back(0x00); // Nested object
             }
             else if (child->valueType == TYPE_STRING) {
@@ -413,8 +464,11 @@ private:
             else if (child->valueType == TYPE_INT) {
                 buffer.push_back(0x02); // Int32
             }
+            else if (child->valueType == TYPE_FLOAT) {
+                buffer.push_back(0x03); // Float32
+            }
             else {
-                continue; // Skip unknown types
+                continue; // Skip TYPE_NONE or unknown types
             }
 
             // Write key name
@@ -424,7 +478,7 @@ private:
             buffer.push_back(0x00); // Null terminator
 
             // Write value based on type
-            if (child->valueType == TYPE_SUBSECTION || child->GetChildCount() > 0) {
+            if (isSubsection) {
                 // Recursively serialize nested object
                 child->serializeRecursive(buffer);
                 buffer.push_back(0x08); // End of object marker
@@ -443,6 +497,16 @@ private:
                 buffer.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
                 buffer.push_back(static_cast<uint8_t>((value >> 16) & 0xFF));
                 buffer.push_back(static_cast<uint8_t>((value >> 24) & 0xFF));
+            }
+            else if (child->valueType == TYPE_FLOAT) {
+                // Write float32 value (little-endian)
+                float value = child->floatValue;
+                uint32_t intBits;
+                std::memcpy(&intBits, &value, sizeof(float));
+                buffer.push_back(static_cast<uint8_t>(intBits & 0xFF));
+                buffer.push_back(static_cast<uint8_t>((intBits >> 8) & 0xFF));
+                buffer.push_back(static_cast<uint8_t>((intBits >> 16) & 0xFF));
+                buffer.push_back(static_cast<uint8_t>((intBits >> 24) & 0xFF));
             }
         }
     }
