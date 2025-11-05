@@ -375,29 +375,30 @@ public:
             return false;
         }
 
-        std::string sql = "UPDATE \"" + tableName + "\" SET value = ? WHERE id = ?;";
+        // Use INSERT OR REPLACE to handle both new entries and updates
+        std::string sql = "INSERT OR REPLACE INTO \"" + tableName + "\" (id, value) VALUES (?, ?);";
 
         sqlite3_stmt* stmt;
         if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-            debugOutput("Failed to prepare update query for ID " + id + ": " + std::string(sqlite3_errmsg(db)));
+            debugOutput("Failed to prepare upsert query for ID " + id + ": " + std::string(sqlite3_errmsg(db)));
             return false;
         }
 
-        // Bind the binary data
-        sqlite3_bind_blob(stmt, 1, binaryData.data(), static_cast<int>(binaryData.size()), SQLITE_TRANSIENT);
+        // Bind the ID (parameter 1)
+        sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
 
-        // Bind the ID
-        sqlite3_bind_text(stmt, 2, id.c_str(), -1, SQLITE_TRANSIENT);
+        // Bind the binary data (parameter 2)
+        sqlite3_bind_blob(stmt, 2, binaryData.data(), static_cast<int>(binaryData.size()), SQLITE_TRANSIENT);
 
         int result = sqlite3_step(stmt);
         sqlite3_finalize(stmt);
 
         if (result != SQLITE_DONE) {
-            debugOutput("Failed to update entry " + id + ": " + std::string(sqlite3_errmsg(db)));
+            debugOutput("Failed to upsert entry " + id + ": " + std::string(sqlite3_errmsg(db)));
             return false;
         }
 
-        debugOutput("Successfully updated entry: " + id);
+        debugOutput("Successfully upserted entry: " + id);
         return true;
     }
 
