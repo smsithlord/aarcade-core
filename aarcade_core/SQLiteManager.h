@@ -143,6 +143,10 @@ public:
         return true;
     }
 
+    sqlite3* getDb() {
+        return db;
+    }
+
     std::string getVersion() {
         return std::string(sqlite3_libversion());
     }

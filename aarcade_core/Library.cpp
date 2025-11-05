@@ -1044,6 +1044,76 @@ Library::MergeResult Library::dbtMergeDatabase(const std::string& sourcePath, co
 
     OutputDebugStringA("[Library] dbtMergeDatabase: Source database opened successfully\n");
 
+    // Get target database handle
+    sqlite3* targetDb = dbManager_->getDb();
+    if (!targetDb) {
+        result.error = "Target database handle is null";
+        OutputDebugStringA("[Library] dbtMergeDatabase: Target database handle is null\n");
+        sqlite3_close(sourceDb);
+        return result;
+    }
+
+    // === TRANSACTION DIAGNOSTICS ===
+    OutputDebugStringA("[Library] dbtMergeDatabase: === Transaction Diagnostics ===\n");
+
+    // Check current journal mode
+    sqlite3_stmt* diagStmt = nullptr;
+    if (sqlite3_prepare_v2(targetDb, "PRAGMA journal_mode;", -1, &diagStmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(diagStmt) == SQLITE_ROW) {
+            const char* mode = (const char*)sqlite3_column_text(diagStmt, 0);
+            OutputDebugStringA(("[Library] Current journal_mode: " + std::string(mode ? mode : "unknown") + "\n").c_str());
+        }
+        sqlite3_finalize(diagStmt);
+    }
+
+    // Check current synchronous setting
+    if (sqlite3_prepare_v2(targetDb, "PRAGMA synchronous;", -1, &diagStmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(diagStmt) == SQLITE_ROW) {
+            int syncValue = sqlite3_column_int(diagStmt, 0);
+            OutputDebugStringA(("[Library] Current synchronous: " + std::to_string(syncValue) +
+                              " (0=OFF, 1=NORMAL, 2=FULL)\n").c_str());
+        }
+        sqlite3_finalize(diagStmt);
+    }
+
+    // === CONFIGURE DATABASE FOR RELIABLE WRITES ===
+    OutputDebugStringA("[Library] dbtMergeDatabase: Configuring database for reliable writes...\n");
+
+    // Force DELETE journal mode (not WAL)
+    char* errMsg = nullptr;
+    rc = sqlite3_exec(targetDb, "PRAGMA journal_mode=DELETE;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        result.error = "Failed to set journal mode: " + std::string(errMsg ? errMsg : "unknown error");
+        OutputDebugStringA(("[Library] dbtMergeDatabase: " + result.error + "\n").c_str());
+        if (errMsg) sqlite3_free(errMsg);
+        sqlite3_close(sourceDb);
+        return result;
+    }
+    OutputDebugStringA("[Library] Journal mode set to DELETE\n");
+
+    // Set synchronous to FULL
+    rc = sqlite3_exec(targetDb, "PRAGMA synchronous=FULL;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        result.error = "Failed to set synchronous mode: " + std::string(errMsg ? errMsg : "unknown error");
+        OutputDebugStringA(("[Library] dbtMergeDatabase: " + result.error + "\n").c_str());
+        if (errMsg) sqlite3_free(errMsg);
+        sqlite3_close(sourceDb);
+        return result;
+    }
+    OutputDebugStringA("[Library] Synchronous mode set to FULL\n");
+
+    // === BEGIN TRANSACTION ===
+    OutputDebugStringA("[Library] dbtMergeDatabase: Beginning transaction...\n");
+    rc = sqlite3_exec(targetDb, "BEGIN TRANSACTION;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        result.error = "Failed to begin transaction: " + std::string(errMsg ? errMsg : "unknown error");
+        OutputDebugStringA(("[Library] dbtMergeDatabase: " + result.error + "\n").c_str());
+        if (errMsg) sqlite3_free(errMsg);
+        sqlite3_close(sourceDb);
+        return result;
+    }
+    OutputDebugStringA("[Library] Transaction started successfully\n");
+
     // Prepare query to read all entries from source table
     std::string sql = "SELECT id, value FROM " + tableName + ";";
     sqlite3_stmt* stmt = nullptr;
@@ -1052,6 +1122,9 @@ Library::MergeResult Library::dbtMergeDatabase(const std::string& sourcePath, co
     if (rc != SQLITE_OK) {
         result.error = "Failed to prepare query: " + std::string(sqlite3_errmsg(sourceDb));
         OutputDebugStringA(("[Library] dbtMergeDatabase: " + result.error + "\n").c_str());
+        // Rollback transaction on error
+        sqlite3_exec(targetDb, "ROLLBACK;", nullptr, nullptr, nullptr);
+        OutputDebugStringA("[Library] Transaction rolled back due to error\n");
         sqlite3_close(sourceDb);
         return result;
     }
@@ -1110,7 +1183,19 @@ Library::MergeResult Library::dbtMergeDatabase(const std::string& sourcePath, co
                 result.skippedCount++;
             } else if (overwriteIfLarger) {
                 // Overwrite only if source blob is larger
-                int existingSize = static_cast<int>(existing.second.length() / 2);  // Hex string to bytes
+                // Parse the existing hex data to get actual size (same method as source)
+                int existingSize = 0;
+                if (!existing.second.empty()) {
+                    // Convert hex string to binary to get actual size
+                    std::vector<uint8_t> existingBinary;
+                    for (size_t i = 0; i < existing.second.length(); i += 2) {
+                        if (i + 1 < existing.second.length()) {
+                            uint8_t byte = static_cast<uint8_t>(std::stoi(existing.second.substr(i, 2), nullptr, 16));
+                            existingBinary.push_back(byte);
+                        }
+                    }
+                    existingSize = static_cast<int>(existingBinary.size());
+                }
 
                 if (blobSize > existingSize) {
                     if (dbManager_->updateEntryById(tableName, id, hexData)) {
@@ -1146,9 +1231,42 @@ Library::MergeResult Library::dbtMergeDatabase(const std::string& sourcePath, co
         result.entries.push_back(entry);
     }
 
-    // Clean up
+    // Clean up source database
     sqlite3_finalize(stmt);
     sqlite3_close(sourceDb);
+
+    // === COMMIT TRANSACTION ===
+    OutputDebugStringA("[Library] dbtMergeDatabase: Committing transaction...\n");
+    errMsg = nullptr;
+    rc = sqlite3_exec(targetDb, "COMMIT;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        result.error = "Failed to commit transaction: " + std::string(errMsg ? errMsg : "unknown error");
+        OutputDebugStringA(("[Library] dbtMergeDatabase: " + result.error + "\n").c_str());
+        if (errMsg) sqlite3_free(errMsg);
+
+        // Attempt rollback
+        sqlite3_exec(targetDb, "ROLLBACK;", nullptr, nullptr, nullptr);
+        OutputDebugStringA("[Library] Transaction rolled back\n");
+        return result;
+    }
+    OutputDebugStringA("[Library] Transaction committed successfully\n");
+
+    // === EXPLICIT CACHE FLUSH ===
+    OutputDebugStringA("[Library] dbtMergeDatabase: Flushing database cache...\n");
+    rc = sqlite3_db_cacheflush(targetDb);
+    if (rc != SQLITE_OK) {
+        OutputDebugStringA(("[Library] Warning: Cache flush returned code " + std::to_string(rc) +
+                          " (this may be normal if no pages to flush)\n").c_str());
+    } else {
+        OutputDebugStringA("[Library] Cache flushed successfully\n");
+    }
+
+    // Ensure synchronous setting persists after commit
+    rc = sqlite3_exec(targetDb, "PRAGMA synchronous=FULL;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        OutputDebugStringA("[Library] Warning: Could not re-set synchronous mode after commit\n");
+        if (errMsg) sqlite3_free(errMsg);
+    }
 
     result.success = true;
     result.error = "";

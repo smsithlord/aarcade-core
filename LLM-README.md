@@ -703,6 +703,56 @@ const results = aapi.dbtRemoveAnomalousKeys(instanceIds);
 - Modal view for inspecting full KeyValues structure
 - Safe removal of unexpected keys while preserving structure
 
+### 5. Database Merge
+
+**Purpose**: Merge entries from another database file into the current library
+
+**JavaScript API**:
+```javascript
+const result = aapi.dbtMergeDatabase(sourcePath, tableName, skipExisting, overwriteIfLarger);
+// Returns: {
+//   success: bool,
+//   error: string,
+//   totalEntries: number,
+//   mergedCount: number,
+//   skippedCount: number,
+//   overwrittenCount: number,
+//   failedCount: number,
+//   entries: [{ id: string, action: string, blobSizeBytes: number, error: string }, ...]
+// }
+```
+
+**Merge Strategies**:
+- **Skip existing** (`skipExisting=true, overwriteIfLarger=false`): Only add new entries, never overwrite
+- **Overwrite all** (`skipExisting=false, overwriteIfLarger=false`): Replace all existing entries with source data
+- **Overwrite if larger** (`skipExisting=false, overwriteIfLarger=true`): Only overwrite when source blob is larger
+
+**Transaction Optimization**:
+
+The merge operation has been optimized for reliability and performance using proper transaction management:
+
+1. **Transaction Diagnostics**: Checks and displays current journal mode and synchronous settings
+2. **DELETE Journal Mode**: Forces DELETE mode (not WAL) for direct writes to main database file
+3. **PRAGMA synchronous=FULL**: Ensures SQLite waits for data to be written to disk, preventing data loss
+4. **Single Transaction**: Wraps entire table merge in `BEGIN TRANSACTION` / `COMMIT` for atomicity
+5. **Explicit Cache Flush**: Calls `sqlite3_db_cacheflush()` after commit to force cached pages to disk
+6. **Rollback on Error**: Automatically rolls back transaction if any error occurs
+
+**Performance Impact**:
+- **Before optimization**: Each entry = separate transaction (thousands of disk commits)
+- **After optimization**: Entire table = single transaction (one disk commit)
+- **Merge All Tables**: Now efficiently processes all 7 tables with proper persistence guarantees
+
+**Important Notes**:
+- Size comparison parses both source and existing blobs to binary for accurate size measurement
+- All changes persist reliably to disk instead of being buffered in memory
+- Safe to use for large-scale merges (thousands of entries)
+- Diagnostic output helps identify database configuration issues
+
+**C++ Method**: [Library.cpp](aarcade_core/Library.cpp) - `dbtMergeDatabase()`
+
+**UI**: [merge-database.html](src/assets/merge-database.html)
+
 ---
 
 ## Development Guidelines
