@@ -340,6 +340,83 @@ std::vector<Library::TrimResult> Library::dbtTrimTextFields(const std::string& t
         return results;
     }
 
+    // Get database handle
+    sqlite3* db = dbManager_->getDb();
+    if (!db) {
+        OutputDebugStringA("[Library] dbtTrimTextFields: Database handle is null\n");
+        for (const auto& id : entryIds) {
+            results.push_back({ id, false, "Database handle is null" });
+        }
+        return results;
+    }
+
+    // === TRANSACTION DIAGNOSTICS ===
+    OutputDebugStringA("[Library] dbtTrimTextFields: === Transaction Diagnostics ===\n");
+
+    // Check current journal mode
+    sqlite3_stmt* diagStmt = nullptr;
+    if (sqlite3_prepare_v2(db, "PRAGMA journal_mode;", -1, &diagStmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(diagStmt) == SQLITE_ROW) {
+            const char* mode = (const char*)sqlite3_column_text(diagStmt, 0);
+            OutputDebugStringA(("[Library] Current journal_mode: " + std::string(mode ? mode : "unknown") + "\n").c_str());
+        }
+        sqlite3_finalize(diagStmt);
+    }
+
+    // Check current synchronous setting
+    if (sqlite3_prepare_v2(db, "PRAGMA synchronous;", -1, &diagStmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(diagStmt) == SQLITE_ROW) {
+            int syncValue = sqlite3_column_int(diagStmt, 0);
+            OutputDebugStringA(("[Library] Current synchronous: " + std::to_string(syncValue) +
+                              " (0=OFF, 1=NORMAL, 2=FULL)\n").c_str());
+        }
+        sqlite3_finalize(diagStmt);
+    }
+
+    // === CONFIGURE DATABASE FOR RELIABLE WRITES ===
+    OutputDebugStringA("[Library] dbtTrimTextFields: Configuring database for reliable writes...\n");
+
+    // Force DELETE journal mode (not WAL)
+    char* errMsg = nullptr;
+    int rc = sqlite3_exec(db, "PRAGMA journal_mode=DELETE;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        std::string error = "Failed to set journal mode: " + std::string(errMsg ? errMsg : "unknown error");
+        OutputDebugStringA(("[Library] dbtTrimTextFields: " + error + "\n").c_str());
+        if (errMsg) sqlite3_free(errMsg);
+        for (const auto& id : entryIds) {
+            results.push_back({ id, false, error });
+        }
+        return results;
+    }
+    OutputDebugStringA("[Library] Journal mode set to DELETE\n");
+
+    // Set synchronous to FULL
+    rc = sqlite3_exec(db, "PRAGMA synchronous=FULL;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        std::string error = "Failed to set synchronous mode: " + std::string(errMsg ? errMsg : "unknown error");
+        OutputDebugStringA(("[Library] dbtTrimTextFields: " + error + "\n").c_str());
+        if (errMsg) sqlite3_free(errMsg);
+        for (const auto& id : entryIds) {
+            results.push_back({ id, false, error });
+        }
+        return results;
+    }
+    OutputDebugStringA("[Library] Synchronous mode set to FULL\n");
+
+    // === BEGIN TRANSACTION ===
+    OutputDebugStringA("[Library] dbtTrimTextFields: Beginning transaction...\n");
+    rc = sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        std::string error = "Failed to begin transaction: " + std::string(errMsg ? errMsg : "unknown error");
+        OutputDebugStringA(("[Library] dbtTrimTextFields: " + error + "\n").c_str());
+        if (errMsg) sqlite3_free(errMsg);
+        for (const auto& id : entryIds) {
+            results.push_back({ id, false, error });
+        }
+        return results;
+    }
+    OutputDebugStringA("[Library] Transaction started successfully\n");
+
     // Process each entry
     for (const auto& id : entryIds) {
         TrimResult result;
@@ -422,6 +499,45 @@ std::vector<Library::TrimResult> Library::dbtTrimTextFields(const std::string& t
         }
 
         results.push_back(result);
+    }
+
+    // === COMMIT TRANSACTION ===
+    OutputDebugStringA("[Library] dbtTrimTextFields: Committing transaction...\n");
+    errMsg = nullptr;
+    rc = sqlite3_exec(db, "COMMIT;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        std::string error = "Failed to commit transaction: " + std::string(errMsg ? errMsg : "unknown error");
+        OutputDebugStringA(("[Library] dbtTrimTextFields: " + error + "\n").c_str());
+        if (errMsg) sqlite3_free(errMsg);
+
+        // Attempt rollback
+        sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        OutputDebugStringA("[Library] Transaction rolled back\n");
+
+        // Mark all results as failed
+        for (auto& r : results) {
+            r.success = false;
+            r.error = error;
+        }
+        return results;
+    }
+    OutputDebugStringA("[Library] Transaction committed successfully\n");
+
+    // === EXPLICIT CACHE FLUSH ===
+    OutputDebugStringA("[Library] dbtTrimTextFields: Flushing database cache...\n");
+    rc = sqlite3_db_cacheflush(db);
+    if (rc != SQLITE_OK) {
+        OutputDebugStringA(("[Library] Warning: Cache flush returned code " + std::to_string(rc) +
+                          " (this may be normal if no pages to flush)\n").c_str());
+    } else {
+        OutputDebugStringA("[Library] Cache flushed successfully\n");
+    }
+
+    // Ensure synchronous setting persists after commit
+    rc = sqlite3_exec(db, "PRAGMA synchronous=FULL;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        OutputDebugStringA("[Library] Warning: Could not re-set synchronous mode after commit\n");
+        if (errMsg) sqlite3_free(errMsg);
     }
 
     OutputDebugStringA(("[Library] dbtTrimTextFields: Completed processing " + std::to_string(results.size()) + " entries\n").c_str());
@@ -821,6 +937,83 @@ std::vector<Library::RemoveKeysResult> Library::dbtRemoveAnomalousKeys(const std
         return results;
     }
 
+    // Get database handle
+    sqlite3* db = dbManager_->getDb();
+    if (!db) {
+        OutputDebugStringA("[Library] dbtRemoveAnomalousKeys: Database handle is null\n");
+        for (const auto& id : instanceIds) {
+            results.push_back({ id, false, "Database handle is null" });
+        }
+        return results;
+    }
+
+    // === TRANSACTION DIAGNOSTICS ===
+    OutputDebugStringA("[Library] dbtRemoveAnomalousKeys: === Transaction Diagnostics ===\n");
+
+    // Check current journal mode
+    sqlite3_stmt* diagStmt = nullptr;
+    if (sqlite3_prepare_v2(db, "PRAGMA journal_mode;", -1, &diagStmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(diagStmt) == SQLITE_ROW) {
+            const char* mode = (const char*)sqlite3_column_text(diagStmt, 0);
+            OutputDebugStringA(("[Library] Current journal_mode: " + std::string(mode ? mode : "unknown") + "\n").c_str());
+        }
+        sqlite3_finalize(diagStmt);
+    }
+
+    // Check current synchronous setting
+    if (sqlite3_prepare_v2(db, "PRAGMA synchronous;", -1, &diagStmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(diagStmt) == SQLITE_ROW) {
+            int syncValue = sqlite3_column_int(diagStmt, 0);
+            OutputDebugStringA(("[Library] Current synchronous: " + std::to_string(syncValue) +
+                              " (0=OFF, 1=NORMAL, 2=FULL)\n").c_str());
+        }
+        sqlite3_finalize(diagStmt);
+    }
+
+    // === CONFIGURE DATABASE FOR RELIABLE WRITES ===
+    OutputDebugStringA("[Library] dbtRemoveAnomalousKeys: Configuring database for reliable writes...\n");
+
+    // Force DELETE journal mode (not WAL)
+    char* errMsg = nullptr;
+    int rc = sqlite3_exec(db, "PRAGMA journal_mode=DELETE;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        std::string error = "Failed to set journal mode: " + std::string(errMsg ? errMsg : "unknown error");
+        OutputDebugStringA(("[Library] dbtRemoveAnomalousKeys: " + error + "\n").c_str());
+        if (errMsg) sqlite3_free(errMsg);
+        for (const auto& id : instanceIds) {
+            results.push_back({ id, false, error });
+        }
+        return results;
+    }
+    OutputDebugStringA("[Library] Journal mode set to DELETE\n");
+
+    // Set synchronous to FULL
+    rc = sqlite3_exec(db, "PRAGMA synchronous=FULL;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        std::string error = "Failed to set synchronous mode: " + std::string(errMsg ? errMsg : "unknown error");
+        OutputDebugStringA(("[Library] dbtRemoveAnomalousKeys: " + error + "\n").c_str());
+        if (errMsg) sqlite3_free(errMsg);
+        for (const auto& id : instanceIds) {
+            results.push_back({ id, false, error });
+        }
+        return results;
+    }
+    OutputDebugStringA("[Library] Synchronous mode set to FULL\n");
+
+    // === BEGIN TRANSACTION ===
+    OutputDebugStringA("[Library] dbtRemoveAnomalousKeys: Beginning transaction...\n");
+    rc = sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        std::string error = "Failed to begin transaction: " + std::string(errMsg ? errMsg : "unknown error");
+        OutputDebugStringA(("[Library] dbtRemoveAnomalousKeys: " + error + "\n").c_str());
+        if (errMsg) sqlite3_free(errMsg);
+        for (const auto& id : instanceIds) {
+            results.push_back({ id, false, error });
+        }
+        return results;
+    }
+    OutputDebugStringA("[Library] Transaction started successfully\n");
+
     // Expected keys at the root of an instance
     std::set<std::string> expectedKeys = { "generation", "info", "objects", "overrides", "legacy" };
 
@@ -902,6 +1095,45 @@ std::vector<Library::RemoveKeysResult> Library::dbtRemoveAnomalousKeys(const std
         }
 
         results.push_back(result);
+    }
+
+    // === COMMIT TRANSACTION ===
+    OutputDebugStringA("[Library] dbtRemoveAnomalousKeys: Committing transaction...\n");
+    errMsg = nullptr;
+    rc = sqlite3_exec(db, "COMMIT;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        std::string error = "Failed to commit transaction: " + std::string(errMsg ? errMsg : "unknown error");
+        OutputDebugStringA(("[Library] dbtRemoveAnomalousKeys: " + error + "\n").c_str());
+        if (errMsg) sqlite3_free(errMsg);
+
+        // Attempt rollback
+        sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        OutputDebugStringA("[Library] Transaction rolled back\n");
+
+        // Mark all results as failed
+        for (auto& r : results) {
+            r.success = false;
+            r.error = error;
+        }
+        return results;
+    }
+    OutputDebugStringA("[Library] Transaction committed successfully\n");
+
+    // === EXPLICIT CACHE FLUSH ===
+    OutputDebugStringA("[Library] dbtRemoveAnomalousKeys: Flushing database cache...\n");
+    rc = sqlite3_db_cacheflush(db);
+    if (rc != SQLITE_OK) {
+        OutputDebugStringA(("[Library] Warning: Cache flush returned code " + std::to_string(rc) +
+                          " (this may be normal if no pages to flush)\n").c_str());
+    } else {
+        OutputDebugStringA("[Library] Cache flushed successfully\n");
+    }
+
+    // Ensure synchronous setting persists after commit
+    rc = sqlite3_exec(db, "PRAGMA synchronous=FULL;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        OutputDebugStringA("[Library] Warning: Could not re-set synchronous mode after commit\n");
+        if (errMsg) sqlite3_free(errMsg);
     }
 
     OutputDebugStringA(("[Library] dbtRemoveAnomalousKeys: Processed " + std::to_string(results.size()) + " instances\n").c_str());
@@ -986,6 +1218,83 @@ std::vector<Library::PurgeResult> Library::dbtPurgeEmptyInstances(const std::vec
         return results;
     }
 
+    // Get database handle
+    sqlite3* db = dbManager_->getDb();
+    if (!db) {
+        OutputDebugStringA("[Library] dbtPurgeEmptyInstances: Database handle is null\n");
+        for (const auto& id : instanceIds) {
+            results.push_back({ id, false, "Database handle is null" });
+        }
+        return results;
+    }
+
+    // === TRANSACTION DIAGNOSTICS ===
+    OutputDebugStringA("[Library] dbtPurgeEmptyInstances: === Transaction Diagnostics ===\n");
+
+    // Check current journal mode
+    sqlite3_stmt* diagStmt = nullptr;
+    if (sqlite3_prepare_v2(db, "PRAGMA journal_mode;", -1, &diagStmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(diagStmt) == SQLITE_ROW) {
+            const char* mode = (const char*)sqlite3_column_text(diagStmt, 0);
+            OutputDebugStringA(("[Library] Current journal_mode: " + std::string(mode ? mode : "unknown") + "\n").c_str());
+        }
+        sqlite3_finalize(diagStmt);
+    }
+
+    // Check current synchronous setting
+    if (sqlite3_prepare_v2(db, "PRAGMA synchronous;", -1, &diagStmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(diagStmt) == SQLITE_ROW) {
+            int syncValue = sqlite3_column_int(diagStmt, 0);
+            OutputDebugStringA(("[Library] Current synchronous: " + std::to_string(syncValue) +
+                              " (0=OFF, 1=NORMAL, 2=FULL)\n").c_str());
+        }
+        sqlite3_finalize(diagStmt);
+    }
+
+    // === CONFIGURE DATABASE FOR RELIABLE WRITES ===
+    OutputDebugStringA("[Library] dbtPurgeEmptyInstances: Configuring database for reliable writes...\n");
+
+    // Force DELETE journal mode (not WAL)
+    char* errMsg = nullptr;
+    int rc = sqlite3_exec(db, "PRAGMA journal_mode=DELETE;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        std::string error = "Failed to set journal mode: " + std::string(errMsg ? errMsg : "unknown error");
+        OutputDebugStringA(("[Library] dbtPurgeEmptyInstances: " + error + "\n").c_str());
+        if (errMsg) sqlite3_free(errMsg);
+        for (const auto& id : instanceIds) {
+            results.push_back({ id, false, error });
+        }
+        return results;
+    }
+    OutputDebugStringA("[Library] Journal mode set to DELETE\n");
+
+    // Set synchronous to FULL
+    rc = sqlite3_exec(db, "PRAGMA synchronous=FULL;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        std::string error = "Failed to set synchronous mode: " + std::string(errMsg ? errMsg : "unknown error");
+        OutputDebugStringA(("[Library] dbtPurgeEmptyInstances: " + error + "\n").c_str());
+        if (errMsg) sqlite3_free(errMsg);
+        for (const auto& id : instanceIds) {
+            results.push_back({ id, false, error });
+        }
+        return results;
+    }
+    OutputDebugStringA("[Library] Synchronous mode set to FULL\n");
+
+    // === BEGIN TRANSACTION ===
+    OutputDebugStringA("[Library] dbtPurgeEmptyInstances: Beginning transaction...\n");
+    rc = sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        std::string error = "Failed to begin transaction: " + std::string(errMsg ? errMsg : "unknown error");
+        OutputDebugStringA(("[Library] dbtPurgeEmptyInstances: " + error + "\n").c_str());
+        if (errMsg) sqlite3_free(errMsg);
+        for (const auto& id : instanceIds) {
+            results.push_back({ id, false, error });
+        }
+        return results;
+    }
+    OutputDebugStringA("[Library] Transaction started successfully\n");
+
     // Process each instance
     for (const auto& id : instanceIds) {
         PurgeResult result;
@@ -1003,6 +1312,45 @@ std::vector<Library::PurgeResult> Library::dbtPurgeEmptyInstances(const std::vec
         }
 
         results.push_back(result);
+    }
+
+    // === COMMIT TRANSACTION ===
+    OutputDebugStringA("[Library] dbtPurgeEmptyInstances: Committing transaction...\n");
+    errMsg = nullptr;
+    rc = sqlite3_exec(db, "COMMIT;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        std::string error = "Failed to commit transaction: " + std::string(errMsg ? errMsg : "unknown error");
+        OutputDebugStringA(("[Library] dbtPurgeEmptyInstances: " + error + "\n").c_str());
+        if (errMsg) sqlite3_free(errMsg);
+
+        // Attempt rollback
+        sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        OutputDebugStringA("[Library] Transaction rolled back\n");
+
+        // Mark all results as failed
+        for (auto& r : results) {
+            r.success = false;
+            r.error = error;
+        }
+        return results;
+    }
+    OutputDebugStringA("[Library] Transaction committed successfully\n");
+
+    // === EXPLICIT CACHE FLUSH ===
+    OutputDebugStringA("[Library] dbtPurgeEmptyInstances: Flushing database cache...\n");
+    rc = sqlite3_db_cacheflush(db);
+    if (rc != SQLITE_OK) {
+        OutputDebugStringA(("[Library] Warning: Cache flush returned code " + std::to_string(rc) +
+                          " (this may be normal if no pages to flush)\n").c_str());
+    } else {
+        OutputDebugStringA("[Library] Cache flushed successfully\n");
+    }
+
+    // Ensure synchronous setting persists after commit
+    rc = sqlite3_exec(db, "PRAGMA synchronous=FULL;", nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        OutputDebugStringA("[Library] Warning: Could not re-set synchronous mode after commit\n");
+        if (errMsg) sqlite3_free(errMsg);
     }
 
     OutputDebugStringA(("[Library] dbtPurgeEmptyInstances: Processed " + std::to_string(results.size()) + " instances\n").c_str());

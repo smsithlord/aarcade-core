@@ -629,11 +629,27 @@ const results = aapi.dbtTrimTextFields(tableName, entryIds, maxLength);
 
 **C++ Method**: [Library.cpp](aarcade_core/Library.cpp) - `dbtTrimTextFields()`
 
+**Transaction Optimization**:
+
+The trim operation has been optimized for reliability and performance using proper transaction management:
+
+1. **Transaction Diagnostics**: Checks and displays current journal mode and synchronous settings
+2. **DELETE Journal Mode**: Forces DELETE mode (not WAL) for direct writes to main database file
+3. **PRAGMA synchronous=FULL**: Ensures SQLite waits for data to be written to disk, preventing data loss
+4. **Single Transaction**: Wraps all trimming operations in `BEGIN TRANSACTION` / `COMMIT` for atomicity
+5. **Explicit Cache Flush**: Calls `sqlite3_db_cacheflush()` after commit to force cached pages to disk
+6. **Rollback on Error**: Automatically rolls back transaction if any error occurs
+
+**Performance Impact**:
+- **Before optimization**: Each entry = separate transaction (N disk commits)
+- **After optimization**: All entries = single transaction (one disk commit)
+- Safe to use for bulk operations (hundreds or thousands of entries)
+
 **Implementation**:
 - Parses each entry's KeyValues
-- Truncates string fields in `local` section
+- Truncates string fields in `local` section (title, description)
 - Preserves structure and metadata
-- Updates `modified` timestamp
+- All changes persist reliably to disk instead of being buffered in memory
 
 ### 3. Database Maintenance
 
@@ -696,12 +712,29 @@ const results = aapi.dbtRemoveAnomalousKeys(instanceIds);
 
 **C++ Methods**: [Library.cpp](aarcade_core/Library.cpp) - `dbtFindAnomalousInstances()`, `dbtGetInstanceKeyValues()`, `dbtRemoveAnomalousKeys()`
 
+**Transaction Optimization** (`dbtRemoveAnomalousKeys`):
+
+The anomalous key removal operation has been optimized using proper transaction management:
+
+1. **Transaction Diagnostics**: Checks and displays current journal mode and synchronous settings
+2. **DELETE Journal Mode**: Forces DELETE mode (not WAL) for direct writes to main database file
+3. **PRAGMA synchronous=FULL**: Ensures SQLite waits for data to be written to disk, preventing data loss
+4. **Single Transaction**: Wraps all removal operations in `BEGIN TRANSACTION` / `COMMIT` for atomicity
+5. **Explicit Cache Flush**: Calls `sqlite3_db_cacheflush()` after commit to force cached pages to disk
+6. **Rollback on Error**: Automatically rolls back transaction if any error occurs
+
+**Performance Impact**:
+- **Before optimization**: Each instance = separate transaction (N disk commits)
+- **After optimization**: All instances = single transaction (one disk commit)
+- Safe to use for bulk operations (hundreds or thousands of instances)
+
 **UI**: [detect-anomalous-instances.html](src/assets/detect-anomalous-instances.html)
 
 **Features**:
 - Checkbox selection for bulk operations
 - Modal view for inspecting full KeyValues structure
 - Safe removal of unexpected keys while preserving structure
+- All changes persist reliably to disk instead of being buffered in memory
 
 ### 5. Database Merge
 
@@ -752,6 +785,51 @@ The merge operation has been optimized for reliability and performance using pro
 **C++ Method**: [Library.cpp](aarcade_core/Library.cpp) - `dbtMergeDatabase()`
 
 **UI**: [merge-database.html](src/assets/merge-database.html)
+
+### 6. Purge Empty Instances
+
+**Purpose**: Detect and remove instances with zero objects to clean up the database
+
+**JavaScript API**:
+```javascript
+// Find empty instances
+const emptyInstances = aapi.dbtFindEmptyInstances();
+// Returns: [{
+//   id: string,
+//   objectCount: number,    // Will be 0 for empty instances
+//   hasObjectsKey: bool     // false if "objects" key is missing
+// }, ...]
+
+// Purge empty instances (bulk operation)
+const results = aapi.dbtPurgeEmptyInstances(instanceIds);
+// Returns: [{ id: string, success: bool, error: string }, ...]
+```
+
+**C++ Methods**: [Library.cpp](aarcade_core/Library.cpp) - `dbtFindEmptyInstances()`, `dbtPurgeEmptyInstances()`
+
+**Transaction Optimization** (`dbtPurgeEmptyInstances`):
+
+The purge operation has been optimized using proper transaction management:
+
+1. **Transaction Diagnostics**: Checks and displays current journal mode and synchronous settings
+2. **DELETE Journal Mode**: Forces DELETE mode (not WAL) for direct writes to main database file
+3. **PRAGMA synchronous=FULL**: Ensures SQLite waits for data to be written to disk, preventing data loss
+4. **Single Transaction**: Wraps all delete operations in `BEGIN TRANSACTION` / `COMMIT` for atomicity
+5. **Explicit Cache Flush**: Calls `sqlite3_db_cacheflush()` after commit to force cached pages to disk
+6. **Rollback on Error**: Automatically rolls back transaction if any error occurs
+
+**Performance Impact**:
+- **Before optimization**: Each instance deletion = separate transaction (N disk commits)
+- **After optimization**: All deletions = single transaction (one disk commit)
+- Safe to use for bulk operations (hundreds or thousands of instances)
+
+**UI**: [purge-empty-instances.html](src/assets/purge-empty-instances.html) (if exists)
+
+**Features**:
+- Detects instances with zero objects (empty scenes)
+- Detects instances missing the "objects" key entirely
+- Bulk deletion with checkbox selection
+- All changes persist reliably to disk instead of being buffered in memory
 
 ---
 
