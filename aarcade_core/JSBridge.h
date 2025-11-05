@@ -115,6 +115,9 @@ public:
     JSValueRef dbtGetInstanceKeyValues(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
         size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 
+    JSValueRef dbtGetEntryKeyValues(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+        size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
+
     JSValueRef dbtRemoveAnomalousKeys(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
         size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception);
 

@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Library Inspector - Database Tools</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+
+        .page-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+            min-height: calc(100vh - 40px);
+        }
+
+        .breadcrumbs {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 12px 20px;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.1);
+            font-size: 14px;
+        }
+
+        .breadcrumbs a {
+            color: #667eea;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .breadcrumbs a:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+
+        .breadcrumbs .separator {
+            margin: 0 8px;
+            color: #999;
+        }
+
+        .breadcrumbs .current {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            min-width: 800px;
+            max-width: 1000px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+
+        .form-section {
+            margin-bottom: 20px;
+            padding: 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            background: #f9f9f9;
+            text-align: left;
+        }
+
+        .section-title {
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #333;
+            font-size: 16px;
+            text-align: center;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .form-group select,
+        .form-group input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            box-sizing: border-box;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group select:focus,
+        .form-group input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .inspect-button {
+            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+            color: white;
+            border: none;
+            padding: 14px 30px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(68, 160, 141, 0.3);
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .inspect-button:hover {
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+            min-height: 20px;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.running {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        #resultsSection {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .keyvalues-display {
+            background: #f4f4f4;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            overflow-x: auto;
+            color: #333;
+            line-height: 1.6;
+            text-align: left;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 4px solid #2196f3;
+            text-align: left;
+        }
+
+        .info p {
+            margin: 5px 0;
+            color: #1565c0;
+            font-size: 14px;
+        }
+
+        .info strong {
+            color: #0d47a1;
+        }
+    </style>
+</head>
+<body>
+    <nav class="breadcrumbs">
+        <a href="welcome.html">Home</a>
+        <span class="separator">/</span>
+        <a href="database-tools.html">Database Tools</a>
+        <span class="separator">/</span>
+        <span class="current">Library Inspector</span>
+    </nav>
+
+    <div class="page-wrapper">
+        <div class="container">
+            <h1>🔬 Library Inspector</h1>
+            <p class="subtitle">View KeyValues structure for any entry by table and ID</p>
+
+            <div class="form-section">
+                <div class="section-title">🔍 Entry Lookup</div>
+
+                <div class="form-group">
+                    <label for="tableSelect">Table:</label>
+                    <select id="tableSelect">
+                        <option value="items">Items</option>
+                        <option value="apps">Apps</option>
+                        <option value="instances">Instances</option>
+                        <option value="maps">Maps</option>
+                        <option value="models">Models</option>
+                        <option value="platforms">Platforms</option>
+                        <option value="types">Types</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="entryIdInput">Entry ID:</label>
+                    <input type="text" id="entryIdInput" placeholder="Enter entry ID (e.g., game-123, app-456)">
+                </div>
+
+                <button class="inspect-button" onclick="inspectEntry()">
+                    🔬 Inspect Entry
+                </button>
+            </div>
+
+            <div id="status" class="status"></div>
+
+            <div id="resultsSection">
+                <div class="section-title">📊 KeyValues Structure</div>
+                <div class="keyvalues-display" id="keyvaluesDisplay">
+                    <!-- KeyValues plain text will be displayed here -->
+                </div>
+            </div>
+
+            <div class="info">
+                <p><strong>ℹ️ About This Tool:</strong></p>
+                <p>• View the complete KeyValues structure for any database entry</p>
+                <p>• Works with all table types: items, apps, instances, maps, models, platforms, types</p>
+                <p>• Displays hierarchical data with proper indentation</p>
+                <p>• Useful for debugging and inspecting entry data</p>
+                <p>• Simply select a table, enter an entry ID, and click Inspect</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function inspectEntry() {
+            const tableName = document.getElementById('tableSelect').value;
+            const entryId = document.getElementById('entryIdInput').value.trim();
+
+            if (!entryId) {
+                showError('❌ Please enter an entry ID');
+                return;
+            }
+
+            showRunning(`🔄 Fetching entry "${entryId}" from table "${tableName}"...`);
+
+            try {
+                // Call C++ backend
+                const keyValuesText = aapi.dbtGetEntryKeyValues(tableName, entryId);
+
+                // Check if it's an error message
+                if (keyValuesText.startsWith('Error:')) {
+                    showError('❌ ' + keyValuesText);
+                    hideResults();
+                } else {
+                    // Display the KeyValues text
+                    const keyvaluesDisplay = document.getElementById('keyvaluesDisplay');
+                    keyvaluesDisplay.textContent = keyValuesText;
+
+                    // Show results section
+                    const resultsSection = document.getElementById('resultsSection');
+                    resultsSection.style.display = 'block';
+
+                    showSuccess(`✅ Successfully retrieved entry "${entryId}" from table "${tableName}"`);
+                }
+            } catch (error) {
+                showError('❌ Error fetching entry: ' + error.message);
+                hideResults();
+                console.error('Inspection error:', error);
+            }
+        }
+
+        function hideResults() {
+            document.getElementById('resultsSection').style.display = 'none';
+        }
+
+        // Allow Enter key to trigger inspection
+        document.getElementById('entryIdInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                inspectEntry();
+            }
+        });
+
+        // Status display functions
+        function showRunning(message) {
+            const status = document.getElementById('status');
+            status.className = 'status running';
+            status.textContent = message;
+        }
+
+        function showSuccess(message) {
+            const status = document.getElementById('status');
+            status.className = 'status success';
+            status.textContent = message;
+        }
+
+        function showError(message) {
+            const status = document.getElementById('status');
+            status.className = 'status error';
+            status.textContent = message;
+        }
+
+        // Initialize on load
+        window.addEventListener('load', function() {
+            showSuccess('🟢 Ready to inspect entries');
+        });
+    </script>
+</body>
+</html>

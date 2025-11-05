@@ -112,6 +112,9 @@ public:
     std::vector<AnomalousInstanceEntry> dbtFindAnomalousInstances();
     std::string dbtGetInstanceKeyValues(const std::string& instanceId);
 
+    // Library Inspector - Generic entry viewer
+    std::string dbtGetEntryKeyValues(const std::string& tableName, const std::string& entryId);
+
     struct RemoveKeysResult {
         std::string id;
         bool success;

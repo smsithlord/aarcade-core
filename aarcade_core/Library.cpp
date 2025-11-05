@@ -690,6 +690,53 @@ std::string Library::dbtGetInstanceKeyValues(const std::string& instanceId) {
     return plainText;
 }
 
+std::string Library::dbtGetEntryKeyValues(const std::string& tableName, const std::string& entryId) {
+    OutputDebugStringA(("[Library] dbtGetEntryKeyValues: Fetching KeyValues for entry " + entryId + " from table " + tableName + "\n").c_str());
+
+    // Open database if not already open
+    if (!openDatabase()) {
+        OutputDebugStringA("[Library] dbtGetEntryKeyValues: Failed to open database\n");
+        return "Error: Failed to open database";
+    }
+
+    // Validate table name is supported
+    std::vector<std::string> supportedTypes = getSupportedEntryTypes();
+    bool isValidTable = false;
+    for (const auto& type : supportedTypes) {
+        if (type == tableName) {
+            isValidTable = true;
+            break;
+        }
+    }
+
+    if (!isValidTable) {
+        OutputDebugStringA(("[Library] dbtGetEntryKeyValues: Invalid table name: " + tableName + "\n").c_str());
+        return "Error: Table '" + tableName + "' not found. Valid tables: items, apps, instances, maps, models, platforms, types";
+    }
+
+    // Fetch the entry data by ID
+    std::pair<std::string, std::string> entryData = dbManager_->getEntryById(tableName, entryId);
+
+    if (entryData.second.empty()) {
+        OutputDebugStringA(("[Library] dbtGetEntryKeyValues: Entry not found in table " + tableName + "\n").c_str());
+        return "Error: Entry with ID '" + entryId + "' not found in table '" + tableName + "'";
+    }
+
+    // Parse the hex data
+    auto kvData = ArcadeKeyValues::ParseFromHex(entryData.second);
+    if (!kvData) {
+        OutputDebugStringA("[Library] dbtGetEntryKeyValues: Failed to parse KeyValues\n");
+        return "Error: Failed to parse KeyValues data";
+    }
+
+    // Convert to plain text format
+    std::string plainText = keyValuesToPlainText(kvData.get(), 0);
+
+    OutputDebugStringA(("[Library] dbtGetEntryKeyValues: Successfully converted to plain text (" + std::to_string(plainText.length()) + " chars)\n").c_str());
+
+    return plainText;
+}
+
 // Helper function to recursively prune empty string values and empty parent keys.
 // Returns true if this node is logically empty and should be removed by its parent.
 static bool pruneEmptyKeysRecursive(ArcadeKeyValues* node, bool isRoot) {

@@ -195,6 +195,15 @@ JSValueRef dbtGetInstanceKeyValuesCallback(JSContextRef ctx, JSObjectRef functio
     return JSValueMakeNull(ctx);
 }
 
+JSValueRef dbtGetEntryKeyValuesCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    JSBridge* bridge = JSBridge::getInstance();
+    if (bridge) {
+        return bridge->dbtGetEntryKeyValues(ctx, function, thisObject, argumentCount, arguments, exception);
+    }
+    return JSValueMakeNull(ctx);
+}
+
 JSValueRef dbtRemoveAnomalousKeysCallback(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
     size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
     JSBridge* bridge = JSBridge::getInstance();
@@ -385,6 +394,11 @@ void JSBridge::setupJavaScriptBridge(View* view, uint64_t frame_id, bool is_main
 
     methodName = JSStringCreateWithUTF8CString("dbtGetInstanceKeyValues");
     methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, dbtGetInstanceKeyValuesCallback);
+    JSObjectSetProperty(ctx, aapiObj, methodName, methodFunc, 0, 0);
+    JSStringRelease(methodName);
+
+    methodName = JSStringCreateWithUTF8CString("dbtGetEntryKeyValues");
+    methodFunc = JSObjectMakeFunctionWithCallback(ctx, methodName, dbtGetEntryKeyValuesCallback);
     JSObjectSetProperty(ctx, aapiObj, methodName, methodFunc, 0, 0);
     JSStringRelease(methodName);
 
@@ -1334,6 +1348,58 @@ JSValueRef JSBridge::dbtGetInstanceKeyValues(JSContextRef ctx, JSObjectRef funct
 
     // Call Library method
     std::string plainText = library_->dbtGetInstanceKeyValues(instanceId);
+
+    OutputDebugStringA(("[JSBridge] Retrieved KeyValues plain text (" + std::to_string(plainText.length()) + " chars)\n").c_str());
+
+    // Convert to JavaScript string
+    JSStringRef resultStr = JSStringCreateWithUTF8CString(plainText.c_str());
+    JSValueRef result = JSValueMakeString(ctx, resultStr);
+    JSStringRelease(resultStr);
+
+    return result;
+}
+
+JSValueRef JSBridge::dbtGetEntryKeyValues(JSContextRef ctx, JSObjectRef function, JSObjectRef thisObject,
+    size_t argumentCount, const JSValueRef arguments[], JSValueRef* exception) {
+    OutputDebugStringA("[JSBridge] dbtGetEntryKeyValues called from JavaScript\n");
+
+    if (argumentCount < 2) {
+        OutputDebugStringA("[JSBridge] dbtGetEntryKeyValues: Missing parameters (tableName, entryId)\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    // Get table name from first argument
+    JSStringRef tableNameStr = JSValueToStringCopy(ctx, arguments[0], exception);
+    if (!tableNameStr) {
+        OutputDebugStringA("[JSBridge] dbtGetEntryKeyValues: Invalid table name parameter\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    size_t tableNameLength = JSStringGetMaximumUTF8CStringSize(tableNameStr);
+    char* tableNameBuffer = new char[tableNameLength];
+    JSStringGetUTF8CString(tableNameStr, tableNameBuffer, tableNameLength);
+    std::string tableName(tableNameBuffer);
+    delete[] tableNameBuffer;
+    JSStringRelease(tableNameStr);
+
+    // Get entry ID from second argument
+    JSStringRef entryIdStr = JSValueToStringCopy(ctx, arguments[1], exception);
+    if (!entryIdStr) {
+        OutputDebugStringA("[JSBridge] dbtGetEntryKeyValues: Invalid entry ID parameter\n");
+        return JSValueMakeNull(ctx);
+    }
+
+    size_t entryIdLength = JSStringGetMaximumUTF8CStringSize(entryIdStr);
+    char* entryIdBuffer = new char[entryIdLength];
+    JSStringGetUTF8CString(entryIdStr, entryIdBuffer, entryIdLength);
+    std::string entryId(entryIdBuffer);
+    delete[] entryIdBuffer;
+    JSStringRelease(entryIdStr);
+
+    OutputDebugStringA(("[JSBridge] Fetching KeyValues for entry " + entryId + " from table " + tableName + "\n").c_str());
+
+    // Call Library method
+    std::string plainText = library_->dbtGetEntryKeyValues(tableName, entryId);
 
     OutputDebugStringA(("[JSBridge] Retrieved KeyValues plain text (" + std::to_string(plainText.length()) + " chars)\n").c_str());
 
